@@ -168,6 +168,14 @@ public final class DeviceConfig {
     public static final String NAMESPACE_BATTERY_SAVER = "battery_saver";
 
     /**
+     * Namespace for holding battery stats configuration.
+     *
+     * @hide
+     */
+    @SystemApi(client = SystemApi.Client.MODULE_LIBRARIES)
+    public static final String NAMESPACE_BATTERY_STATS = "battery_stats";
+
+    /**
      * Namespace for blobstore feature that allows apps to share data blobs.
      *
      * @hide
@@ -182,6 +190,14 @@ public final class DeviceConfig {
      */
     @SystemApi
     public static final String NAMESPACE_BLUETOOTH = "bluetooth";
+
+    /**
+     * Namespace for all camera-related features that are used at the native level.
+     *
+     * @hide
+     */
+    @SystemApi
+    public static final String NAMESPACE_CAMERA_NATIVE = "camera_native";
 
     /**
      * Namespace for cellular security related features.
@@ -842,6 +858,14 @@ public final class DeviceConfig {
      */
     @SystemApi(client = SystemApi.Client.MODULE_LIBRARIES)
     public static final String NAMESPACE_VENDOR_SYSTEM_NATIVE_BOOT = "vendor_system_native_boot";
+
+    /**
+     * Namespace for memory safety related features (e.g. MTE) that need a reboot to be applied
+     *
+     * @hide
+     */
+    @SystemApi(client = SystemApi.Client.MODULE_LIBRARIES)
+    public static final String NAMESPACE_MEMORY_SAFETY_NATIVE_BOOT = "memory_safety_native_boot";
 
     /**
      * Namespace for memory safety related features (e.g. MTE)
