@@ -7,6 +7,7 @@ package android.provider {
     field public static final String NAMESPACE_APP_CLONING = "app_cloning";
     field public static final String NAMESPACE_APP_STANDBY = "app_standby";
     field public static final String NAMESPACE_ARC_APP_COMPAT = "arc_app_compat";
+    field public static final String NAMESPACE_BATTERY_STATS = "battery_stats";
     field public static final String NAMESPACE_CONFIGURATION = "configuration";
     field public static final String NAMESPACE_CONNECTIVITY_THERMAL_POWER_MANAGER = "connectivity_thermal_power_manager";
     field public static final String NAMESPACE_CONTACTS_PROVIDER = "contacts_provider";
@@ -17,6 +18,7 @@ package android.provider {
     field public static final String NAMESPACE_INTERACTION_JANK_MONITOR = "interaction_jank_monitor";
     field public static final String NAMESPACE_LATENCY_TRACKER = "latency_tracker";
     field public static final String NAMESPACE_MEMORY_SAFETY_NATIVE = "memory_safety_native";
+    field public static final String NAMESPACE_MEMORY_SAFETY_NATIVE_BOOT = "memory_safety_native_boot";
     field public static final String NAMESPACE_MGLRU_NATIVE = "mglru_native";
     field public static final String NAMESPACE_REMOTE_KEY_PROVISIONING_NATIVE = "remote_key_provisioning_native";
     field public static final String NAMESPACE_ROTATION_RESOLVER = "rotation_resolver";
@@ -34,6 +36,10 @@ package android.provider {
 
   public static class DeviceConfig.Properties {
     ctor public DeviceConfig.Properties(@NonNull String, @Nullable java.util.Map<java.lang.String,java.lang.String>);
+  }
+
+  public final class DeviceConfigShellCommandHandler {
+    method public static int handleShellCommand(@NonNull android.os.ParcelFileDescriptor, @NonNull android.os.ParcelFileDescriptor, @NonNull android.os.ParcelFileDescriptor, @NonNull String[]);
   }
 
 }

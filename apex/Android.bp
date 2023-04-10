@@ -71,14 +71,17 @@ android_app_certificate {
 apex {
     name: "com.android.configinfrastructure",
     bootclasspath_fragments: ["com.android.configinfrastructure-bootclasspath-fragment"],
+    defaults: ["u-launched-apex-module"],
     systemserverclasspath_fragments: [
         "com.android.configinfrastructure-systemserverclasspath-fragment",
     ],
     manifest: "manifest.json",
     file_contexts: ":apex.test-file_contexts",
+    prebuilts: [
+        "current_sdkinfo",
+    ],
     key: "com.android.configinfrastructure.key",
     certificate: ":com.android.configinfrastructure.certificate",
-    updatable: false,
 }
 
 sdk {
