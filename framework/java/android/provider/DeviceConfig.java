@@ -16,11 +16,14 @@
 
 package android.provider;
 
+import static android.Manifest.permission.WRITE_ALLOWLISTED_DEVICE_CONFIG;
 import static android.Manifest.permission.READ_DEVICE_CONFIG;
 import static android.Manifest.permission.WRITE_DEVICE_CONFIG;
+import static android.Manifest.permission.READ_WRITE_SYNC_DISABLED_MODE_CONFIG;
 
 import android.Manifest;
 import android.annotation.CallbackExecutor;
+import android.annotation.IntDef;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.annotation.RequiresPermission;
@@ -34,6 +37,11 @@ import android.util.Log;
 import android.util.Pair;
 
 import com.android.internal.annotations.GuardedBy;
+
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -168,6 +176,14 @@ public final class DeviceConfig {
     public static final String NAMESPACE_BATTERY_SAVER = "battery_saver";
 
     /**
+     * Namespace for holding battery stats configuration.
+     *
+     * @hide
+     */
+    @SystemApi(client = SystemApi.Client.MODULE_LIBRARIES)
+    public static final String NAMESPACE_BATTERY_STATS = "battery_stats";
+
+    /**
      * Namespace for blobstore feature that allows apps to share data blobs.
      *
      * @hide
@@ -222,6 +238,22 @@ public final class DeviceConfig {
      */
     @SystemApi
     public static final String NAMESPACE_CAPTIVEPORTALLOGIN = "captive_portal_login";
+
+    /**
+     * Namespace for all EdgeTpu related features.
+     *
+     * @hide
+     */
+    @SystemApi
+    public static final String NAMESPACE_EDGETPU_NATIVE = "edgetpu_native";
+
+    /**
+     * Namespace for all HealthFitness related features.
+     *
+     * @hide
+     */
+    @SystemApi
+    public static final String NAMESPACE_HEALTH_FITNESS = "health_fitness";
 
     /**
      * Namespace for Tethering module.
@@ -907,6 +939,43 @@ public final class DeviceConfig {
     @SystemApi
     public static final String NAMESPACE_REMOTE_AUTH = "remote_auth";
 
+    /**
+     * The modes that can be used when disabling syncs to the 'config' settings.
+     * @hide
+     */
+    @IntDef(prefix = "SYNC_DISABLED_MODE_",
+            value = { SYNC_DISABLED_MODE_NONE, SYNC_DISABLED_MODE_PERSISTENT,
+                    SYNC_DISABLED_MODE_UNTIL_REBOOT })
+    @Retention(RetentionPolicy.SOURCE)
+    @Target({ElementType.TYPE_PARAMETER, ElementType.TYPE_USE})
+    public @interface SyncDisabledMode {}
+
+    /**
+     * Sync is not disabled.
+     *
+     * @hide
+     */
+    @SystemApi
+    public static final int SYNC_DISABLED_MODE_NONE = 0;
+
+    /**
+     * Disabling of Config bulk update / syncing is persistent, i.e. it survives a device
+     * reboot.
+     *
+     * @hide
+     */
+    @SystemApi
+    public static final int SYNC_DISABLED_MODE_PERSISTENT = 1;
+
+    /**
+     * Disabling of Config bulk update / syncing is not persistent, i.e. it will
+     * not survive a device reboot.
+     *
+     * @hide
+     */
+    @SystemApi
+    public static final int SYNC_DISABLED_MODE_UNTIL_REBOOT = 2;
+
     private static final Object sLock = new Object();
     @GuardedBy("sLock")
     private static ArrayMap<OnPropertiesChangedListener, Pair<String, Executor>> sListeners =
@@ -1129,7 +1198,7 @@ public final class DeviceConfig {
      * @see #resetToDefaults(int, String).
      */
     @SystemApi
-    @RequiresPermission(WRITE_DEVICE_CONFIG)
+    @RequiresPermission(anyOf = {WRITE_DEVICE_CONFIG, WRITE_ALLOWLISTED_DEVICE_CONFIG})
     public static boolean setProperty(@NonNull String namespace, @NonNull String name,
             @Nullable String value, boolean makeDefault) {
         return Settings.Config.putString(namespace, name, value, makeDefault);
@@ -1151,7 +1220,7 @@ public final class DeviceConfig {
      * @hide
      */
     @SystemApi
-    @RequiresPermission(WRITE_DEVICE_CONFIG)
+    @RequiresPermission(anyOf = {WRITE_DEVICE_CONFIG, WRITE_ALLOWLISTED_DEVICE_CONFIG})
     public static boolean setProperties(@NonNull Properties properties) throws BadConfigException {
         return Settings.Config.setStrings(properties.getNamespace(),
                 properties.mMap);
@@ -1167,7 +1236,7 @@ public final class DeviceConfig {
      * @hide
      */
     @SystemApi
-    @RequiresPermission(WRITE_DEVICE_CONFIG)
+    @RequiresPermission(anyOf = {WRITE_DEVICE_CONFIG, WRITE_ALLOWLISTED_DEVICE_CONFIG})
     public static boolean deleteProperty(@NonNull String namespace, @NonNull String name) {
         return Settings.Config.deleteString(namespace, name);
     }
@@ -1198,7 +1267,7 @@ public final class DeviceConfig {
      * @see #setProperty(String, String, String, boolean)
      */
     @SystemApi
-    @RequiresPermission(WRITE_DEVICE_CONFIG)
+    @RequiresPermission(anyOf = {WRITE_DEVICE_CONFIG, WRITE_ALLOWLISTED_DEVICE_CONFIG})
     public static void resetToDefaults(int resetMode, @Nullable String namespace) {
         Settings.Config.resetToDefaults(resetMode, namespace);
     }
@@ -1208,16 +1277,15 @@ public final class DeviceConfig {
      * config values. This is intended for use during tests to prevent a sync operation clearing
      * config values which could influence the outcome of the tests, i.e. by changing behavior.
      *
-     * @param syncDisabledMode the mode to use, see {@link Settings.Config#SYNC_DISABLED_MODE_NONE},
-     *     {@link Settings.Config#SYNC_DISABLED_MODE_PERSISTENT} and {@link
-     *     Settings.Config#SYNC_DISABLED_MODE_UNTIL_REBOOT}
+     * @param syncDisabledMode the mode to use, see {@link #SYNC_DISABLED_MODE_NONE},
+     *     {@link #SYNC_DISABLED_MODE_PERSISTENT} and {@link #SYNC_DISABLED_MODE_UNTIL_REBOOT}
      *
      * @see #getSyncDisabledMode()
      * @hide
      */
     @SystemApi
-    @RequiresPermission(WRITE_DEVICE_CONFIG)
-    public static void setSyncDisabledMode(int syncDisabledMode) {
+    @RequiresPermission(anyOf = {WRITE_DEVICE_CONFIG, READ_WRITE_SYNC_DISABLED_MODE_CONFIG})
+    public static void setSyncDisabledMode(@SyncDisabledMode int syncDisabledMode) {
         Settings.Config.setSyncDisabledMode(syncDisabledMode);
     }
 
@@ -1228,7 +1296,7 @@ public final class DeviceConfig {
      * @hide
      */
     @SystemApi
-    @RequiresPermission(WRITE_DEVICE_CONFIG)
+    @RequiresPermission(anyOf = {WRITE_DEVICE_CONFIG, READ_WRITE_SYNC_DISABLED_MODE_CONFIG})
     public static int getSyncDisabledMode() {
         return Settings.Config.getSyncDisabledMode();
     }
@@ -1409,6 +1477,15 @@ public final class DeviceConfig {
     @SystemApi
     public static @NonNull List<String> getPublicNamespaces() {
         return PUBLIC_NAMESPACES;
+    }
+
+    /**
+     * Returns list of flags that can be written with adb as non-root.
+     * @hide
+     */
+    @SystemApi
+    public static @NonNull Set<String> getAdbWritableFlags() {
+        return WritableFlags.ALLOWLIST;
     }
 
     /**
