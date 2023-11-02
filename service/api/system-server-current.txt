@@ -6,6 +6,7 @@ package com.android.server.deviceconfig {
 
   public static class DeviceConfigInit.Lifecycle extends com.android.server.SystemService {
     ctor public DeviceConfigInit.Lifecycle(@NonNull android.content.Context);
+    method public void onStart();
   }
 
 }
