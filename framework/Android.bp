@@ -18,15 +18,18 @@ package {
 
 java_sdk_library {
     name: "framework-configinfrastructure",
-    srcs: [ "java/**/*.java" ],
+    srcs: ["java/**/*.java"],
     defaults: ["framework-module-defaults"],
-    permitted_packages: [ "android.provider" ],
+    permitted_packages: ["android.provider"],
     apex_available: [
         "com.android.configinfrastructure",
     ],
     min_sdk_version: "UpsideDownCake",
     sdk_version: "module_current",
     impl_library_visibility: [
-        "//packages/modules/ConfigInfrastructure:__subpackages__"
+        "//packages/modules/ConfigInfrastructure:__subpackages__",
     ],
+    lint: {
+        baseline_filename: "lint-baseline.xml",
+    },
 }
