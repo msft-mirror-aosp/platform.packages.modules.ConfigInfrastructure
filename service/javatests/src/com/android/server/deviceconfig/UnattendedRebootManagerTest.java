@@ -6,6 +6,7 @@ import static com.android.server.deviceconfig.Flags.FLAG_ENABLE_CUSTOM_REBOOT_TI
 import static com.android.server.deviceconfig.Flags.FLAG_ENABLE_SIM_PIN_REPLAY;
 
 import static com.android.server.deviceconfig.UnattendedRebootManager.ACTION_RESUME_ON_REBOOT_LSKF_CAPTURED;
+import static com.android.server.deviceconfig.UnattendedRebootManager.ACTION_TRIGGER_PREPARATION_FALLBACK;
 import static com.android.server.deviceconfig.UnattendedRebootManager.ACTION_TRIGGER_REBOOT;
 import static com.google.common.truth.Truth.assertThat;
 import static org.junit.Assert.assertFalse;
@@ -60,7 +61,7 @@ public class UnattendedRebootManagerTest {
   private static final long RESCHEDULED_REBOOT_TIME = 1696583520000L; // 2023-10-06T02:12:00
   private static final long OUTSIDE_WINDOW_REBOOT_TIME = 1696587000000L; // 2023-10-06T03:10:00
   private static final long RESCHEDULED_OUTSIDE_WINDOW_REBOOT_TIME =
-          1696669920000L; // 2023-10-07T02:12:00
+      1696669920000L; // 2023-10-07T02:12:00
   private static final long ELAPSED_REALTIME_1_DAY = 86400000L;
 
   private final List<BroadcastReceiverRegistration> mRegisteredReceivers = new ArrayList<>();
@@ -74,9 +75,7 @@ public class UnattendedRebootManagerTest {
   private UnattendedRebootManager mRebootManager;
   private SimPinReplayManager mSimPinReplayManager;
 
-  @Rule
-  public final SetFlagsRule mSetFlagsRule = new SetFlagsRule();
-
+  @Rule public final SetFlagsRule mSetFlagsRule = new SetFlagsRule();
 
   @Before
   public void setUp() throws Exception {
@@ -130,10 +129,31 @@ public class UnattendedRebootManagerTest {
         new IntentFilter(ACTION_TRIGGER_REBOOT),
         Context.RECEIVER_EXPORTED);
 
+    mContext.registerReceiver(
+        new BroadcastReceiver() {
+          @Override
+          public void onReceive(Context context, Intent intent) {
+            mRebootManager.prepareUnattendedReboot();
+          }
+        },
+        new IntentFilter(ACTION_TRIGGER_PREPARATION_FALLBACK),
+        Context.RECEIVER_EXPORTED);
+
     mFakeInjector.setElapsedRealtime(ELAPSED_REALTIME_1_DAY);
 
     mFakeInjector.setRequiresChargingForReboot(true);
     when(mBatterManager.isCharging()).thenReturn(true);
+  }
+
+  @Test
+  public void maybePrepareUnattendedReboot() {
+    // After normal flow
+    Log.i(TAG, "maybePrepareUnattendedReboot");
+    when(mKeyguardManager.isDeviceSecure()).thenReturn(true);
+
+    mRebootManager.maybePrepareUnattendedReboot();
+
+    assertTrue(mFakeInjector.isPreparedForUnattendedUpdate(mContext));
   }
 
   @Test
@@ -182,7 +202,8 @@ public class UnattendedRebootManagerTest {
         getRegistrationsForAction(BatteryManager.ACTION_CHARGING);
     assertThat(chargingStateReceiverRegistrations).hasSize(1);
 
-    // Now mimic a change in a charging state changed, and verify that we do the reboot once device
+    // Now mimic a change in a charging state changed, and verify that we do the reboot once
+    // device
     // is charging.
     when(mBatterManager.isCharging()).thenReturn(true);
     BroadcastReceiver chargingStateReceiver = chargingStateReceiverRegistrations.get(0).mReceiver;
@@ -464,23 +485,38 @@ public class UnattendedRebootManagerTest {
 
     @Override
     public void setRebootAlarm(Context context, long rebootTimeMillis) {
-      // To prevent infinite loop, do not simulate another reboot if reboot was already scheduled.
+      // To prevent infinite loop, do not simulate another reboot if reboot was already
+      // scheduled.
       if (scheduledReboot) {
+        actualRebootTime = rebootTimeMillis;
         actualRebootTime = rebootTimeMillis;
         return;
       }
       // Advance now to reboot time and reboot immediately.
       scheduledReboot = true;
       actualRebootTime = rebootTimeMillis;
-      setNow(rebootTimeMillis);
+      triggerAlarmImmediately(context, rebootTimeMillis, ACTION_TRIGGER_REBOOT);
+    }
+
+    private void triggerAlarmImmediately(Context context, long time, String intent) {
+      setNow(time);
 
       LatchingBroadcastReceiver rebootReceiver = new LatchingBroadcastReceiver();
 
       // Wait for reboot broadcast to be sent.
-      context.sendOrderedBroadcast(
-          new Intent(ACTION_TRIGGER_REBOOT), null, rebootReceiver, null, 0, null, null);
+      context.sendOrderedBroadcast(new Intent(intent), null, rebootReceiver, null, 0, null, null);
 
       rebootReceiver.await(20, TimeUnit.SECONDS);
+    }
+
+    @Override
+    public void setPrepareForUnattendedRebootFallbackAlarm(Context context, long delayMillis) {
+      triggerAlarmImmediately(context, delayMillis, ACTION_TRIGGER_PREPARATION_FALLBACK);
+    }
+
+    @Override
+    public void cancelPrepareForUnattendedRebootFallbackAlarm(Context context) {
+      /*no op */
     }
 
     @Override
@@ -564,8 +600,7 @@ public class UnattendedRebootManagerTest {
   }
 
   private List<BroadcastReceiverRegistration> getRegistrationsForAction(String action) {
-    return mRegisteredReceivers
-        .stream()
+    return mRegisteredReceivers.stream()
         .filter(r -> r.mFilter.hasAction(action))
         .collect(Collectors.toList());
   }
