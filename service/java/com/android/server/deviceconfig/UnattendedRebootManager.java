@@ -50,6 +50,9 @@ final class UnattendedRebootManager {
 
   private static final int DEFAULT_REBOOT_FREQUENCY_DAYS = 2;
 
+  // Same as time RoR token is valid for.
+  private static final int DEFAULT_PREPARATION_FALLBACK_DELAY_MINUTES = 10;
+
   private static final String TAG = "UnattendedRebootManager";
 
   static final String REBOOT_REASON = "unattended,flaginfra";
@@ -61,10 +64,13 @@ final class UnattendedRebootManager {
   @VisibleForTesting
   static final String ACTION_TRIGGER_REBOOT = "com.android.server.deviceconfig.TRIGGER_REBOOT";
 
+  @VisibleForTesting
+  static final String ACTION_TRIGGER_PREPARATION_FALLBACK =
+      "com.android.server.deviceconfig.TRIGGER_PREPERATION_FALLBACK";
+
   private final Context mContext;
 
-  @Nullable
-  private final RebootTimingConfiguration mRebootTimingConfiguration;
+  @Nullable private final RebootTimingConfiguration mRebootTimingConfiguration;
 
   private boolean mLskfCaptured;
 
@@ -74,14 +80,15 @@ final class UnattendedRebootManager {
 
   private boolean mChargingReceiverRegistered;
 
-  private final BroadcastReceiver mChargingReceiver = new BroadcastReceiver() {
-    @Override
-    public void onReceive(Context context, Intent intent) {
-      mChargingReceiverRegistered = false;
-      mContext.unregisterReceiver(mChargingReceiver);
-      tryRebootOrSchedule();
-    }
-  };
+  private final BroadcastReceiver mChargingReceiver =
+      new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+          mChargingReceiverRegistered = false;
+          mContext.unregisterReceiver(mChargingReceiver);
+          tryRebootOrSchedule();
+        }
+      };
 
   private static class InjectorImpl implements UnattendedRebootManagerInjector {
     InjectorImpl() {
@@ -116,7 +123,26 @@ final class UnattendedRebootManager {
     public void setRebootAlarm(Context context, long rebootTimeMillis) {
       AlarmManager alarmManager = context.getSystemService(AlarmManager.class);
       alarmManager.setExact(
-          AlarmManager.RTC_WAKEUP, rebootTimeMillis, createTriggerRebootPendingIntent(context));
+          AlarmManager.RTC_WAKEUP,
+          rebootTimeMillis,
+          createTriggerActionPendingIntent(context, ACTION_TRIGGER_REBOOT));
+    }
+
+    @Override
+    public void setPrepareForUnattendedRebootFallbackAlarm(Context context, long delayMillis) {
+      long alarmTime = now() + delayMillis;
+      AlarmManager alarmManager = context.getSystemService(AlarmManager.class);
+      alarmManager.set(
+          AlarmManager.RTC_WAKEUP,
+          alarmTime,
+          createTriggerActionPendingIntent(context, ACTION_TRIGGER_PREPARATION_FALLBACK));
+    }
+
+    @Override
+    public void cancelPrepareForUnattendedRebootFallbackAlarm(Context context) {
+      AlarmManager alarmManager = context.getSystemService(AlarmManager.class);
+      alarmManager.cancel(
+          createTriggerActionPendingIntent(context, ACTION_TRIGGER_PREPARATION_FALLBACK));
     }
 
     public void triggerRebootOnNetworkAvailable(Context context) {
@@ -126,7 +152,8 @@ final class UnattendedRebootManager {
           new NetworkRequest.Builder()
               .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
               .build();
-      connectivityManager.requestNetwork(request, createTriggerRebootPendingIntent(context));
+      connectivityManager.requestNetwork(
+          request, createTriggerActionPendingIntent(context, ACTION_TRIGGER_REBOOT));
     }
 
     public int rebootAndApply(@NonNull Context context, @NonNull String reason, boolean slotSwitch)
@@ -154,11 +181,11 @@ final class UnattendedRebootManager {
       powerManager.reboot(REBOOT_REASON);
     }
 
-    private static PendingIntent createTriggerRebootPendingIntent(Context context) {
+    private static PendingIntent createTriggerActionPendingIntent(Context context, String action) {
       return PendingIntent.getBroadcast(
           context,
           /* requestCode= */ 0,
-          new Intent(ACTION_TRIGGER_REBOOT),
+          new Intent(action),
           PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE);
     }
   }
@@ -194,21 +221,48 @@ final class UnattendedRebootManager {
         },
         new IntentFilter(ACTION_TRIGGER_REBOOT),
         Context.RECEIVER_NOT_EXPORTED);
+    mContext.registerReceiver(
+        new BroadcastReceiver() {
+          @Override
+          public void onReceive(Context context, Intent intent) {
+            prepareUnattendedReboot();
+          }
+        },
+        new IntentFilter(ACTION_TRIGGER_PREPARATION_FALLBACK),
+        Context.RECEIVER_NOT_EXPORTED);
   }
 
   UnattendedRebootManager(Context context) {
-    this(context,
+    this(
+        context,
         new InjectorImpl(),
         new SimPinReplayManager(context),
-        enableCustomRebootTimeConfigurations()
-            ? new RebootTimingConfiguration(context)
-            : null);
+        enableCustomRebootTimeConfigurations() ? new RebootTimingConfiguration(context) : null);
+  }
+
+  public void maybePrepareUnattendedReboot() {
+    Log.d(TAG, "Setting timeout for preparing unattended reboot.");
+    // RoR only supported on devices with screen lock.
+    if (!isDeviceSecure(mContext)) {
+      return;
+    }
+
+    // In the case of RoR failure or reboot without RoR, the device will stay in
+    // LOCKED_BOOT_COMPLETED state until primary auth.
+    // Since preparing for RoR can clear RoR state, wait sufficient time for RoR to finish
+    // before sending fallback preparation during LOCKED_BOOT_STATE.
+    mInjector.setPrepareForUnattendedRebootFallbackAlarm(
+        mContext, TimeUnit.MINUTES.toMillis(DEFAULT_PREPARATION_FALLBACK_DELAY_MINUTES));
   }
 
   public void prepareUnattendedReboot() {
     Log.i(TAG, "Preparing for Unattended Reboot");
     // RoR only supported on devices with screen lock.
     if (!isDeviceSecure(mContext)) {
+      return;
+    }
+    if (isPreparedForUnattendedReboot()) {
+      Log.d(TAG, "Unattended reboot has already been prepared, skip");
       return;
     }
     PendingIntent pendingIntent =
@@ -224,6 +278,7 @@ final class UnattendedRebootManager {
     } catch (IOException e) {
       Log.i(TAG, "prepareForUnattendedReboot failed with exception" + e.getLocalizedMessage());
     }
+    mInjector.cancelPrepareForUnattendedRebootFallbackAlarm(mContext);
   }
 
   public void scheduleReboot() {
@@ -298,7 +353,7 @@ final class UnattendedRebootManager {
     } else {
       isHourWithinRebootHourWindow =
           currentHour >= mInjector.getRebootStartTime()
-          && currentHour < mInjector.getRebootEndTime();
+              && currentHour < mInjector.getRebootEndTime();
     }
     if (!isHourWithinRebootHourWindow) {
       Log.v(TAG, "Reboot requested outside of reboot window, reschedule reboot.");
