@@ -1,5 +1,7 @@
 package com.android.server.deviceconfig;
 
+import static com.android.server.deviceconfig.Flags.fixFlagStagingNotificationResourceFetching;
+
 import android.annotation.NonNull;
 import android.app.AlarmManager;
 import android.app.Notification;
@@ -23,6 +25,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.io.IOException;
+import java.util.Optional;
 import java.util.Map;
 import java.util.Set;
 
@@ -150,6 +153,15 @@ class BootNotificationCreator implements OnPropertiesChangedListener {
                 return;
             }
 
+            Optional<String> resourcesPackageName =
+                    fixFlagStagingNotificationResourceFetching()
+                            ? ServiceResourcesHelper.get(context).getResourcesPackageName()
+                            : Optional.of(RESOURCES_PACKAGE);
+            if (resourcesPackageName.isEmpty()) {
+                Slog.w(TAG, "Unable to find resources package.");
+                return;
+            }
+
             PendingIntent pendingIntent =
                 PendingIntent.getBroadcast(
                     context,
@@ -158,7 +170,8 @@ class BootNotificationCreator implements OnPropertiesChangedListener {
                     PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
             try {
-                Context resourcesContext = context.createPackageContext(RESOURCES_PACKAGE, 0);
+                Context resourcesContext =
+                        context.createPackageContext(resourcesPackageName.get(), 0);
                 Action action = new Action.Builder(
                     Icon.createWithResource(resourcesContext, R.drawable.ic_restart),
                     resourcesContext.getString(R.string.boot_notification_action_text),
