@@ -31,12 +31,40 @@ java_sdk_library {
         "com.android.configinfrastructure",
     ],
     static_libs: [
+        "modules-utils-build",
         "modules-utils-shell-command-handler",
+        "device_config_reboot_flags_java_lib",
+        "guava",
+        "libaconfig_java_proto_lite"
     ],
     libs: [
         "framework-configinfrastructure.impl",
+        "framework-connectivity.stubs.module_lib",
+    ],
+    impl_only_libs: [
+        "DeviceConfigServiceResources",
     ],
     min_sdk_version: "UpsideDownCake",
     sdk_version: "system_server_current",
     jarjar_rules: "jarjar-rules.txt",
+    impl_library_visibility: [
+        "//packages/modules/ConfigInfrastructure/service/javatests",
+    ],
+}
+
+aconfig_declarations {
+    name: "device_config_reboot_flags",
+    package: "com.android.server.deviceconfig",
+    srcs: [
+      "flags.aconfig",
+    ],
+}
+
+java_aconfig_library {
+    name: "device_config_reboot_flags_java_lib",
+    min_sdk_version: "UpsideDownCake",
+    apex_available: [
+        "com.android.configinfrastructure",
+    ],
+    aconfig_declarations: "device_config_reboot_flags",
 }

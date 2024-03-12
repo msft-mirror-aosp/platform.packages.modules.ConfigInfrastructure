@@ -17,6 +17,7 @@
 package android.provider;
 
 import static android.Manifest.permission.WRITE_ALLOWLISTED_DEVICE_CONFIG;
+import static android.Manifest.permission.READ_DEVICE_CONFIG;
 import static android.Manifest.permission.WRITE_DEVICE_CONFIG;
 import static android.Manifest.permission.READ_WRITE_SYNC_DISABLED_MODE_CONFIG;
 
@@ -31,6 +32,7 @@ import android.annotation.SystemApi;
 import android.content.ContentResolver;
 import android.database.ContentObserver;
 import android.net.Uri;
+import com.android.modules.utils.build.SdkLevel;
 import android.util.ArrayMap;
 import android.util.Log;
 import android.util.Pair;
@@ -45,11 +47,19 @@ import java.lang.annotation.Target;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.Executor;
+
+import android.util.Log;
+
+import android.provider.aidl.IDeviceConfigManager;
+import android.provider.DeviceConfigServiceManager;
+import android.provider.DeviceConfigInitializer;
+import android.os.IBinder;
 
 /**
  * Device level configuration parameters which can be tuned by a separate configuration service.
@@ -60,6 +70,14 @@ import java.util.concurrent.Executor;
  */
 @SystemApi
 public final class DeviceConfig {
+
+    /**
+     * The name of the service that provides the logic to these APIs
+     *
+     * @hide
+     */
+    public static final String SERVICE_NAME = "device_config_updatable";
+
     /**
      * Namespace for all accessibility related features.
      *
@@ -197,6 +215,14 @@ public final class DeviceConfig {
      */
     @SystemApi
     public static final String NAMESPACE_BLUETOOTH = "bluetooth";
+
+    /**
+     * Namespace for features relating to android core experiments team internal usage.
+     *
+     * @hide
+     */
+    @SystemApi
+    public static final String NAMESPACE_CORE_EXPERIMENTS_TEAM_INTERNAL = "core_experiments_team_internal";
 
     /**
      * Namespace for all camera-related features that are used at the native level.
@@ -938,6 +964,27 @@ public final class DeviceConfig {
     @SystemApi
     public static final String NAMESPACE_REMOTE_AUTH = "remote_auth";
 
+
+    /**
+     * Namespace for tethering module native features.
+     * Flags defined in this namespace are only usable on
+     * {@link android.os.Build.VERSION_CODES#UPSIDE_DOWN_CAKE} and newer.
+     * On older Android releases, they will not be propagated to native code.
+     *
+     * @hide
+     */
+    @SystemApi(client = SystemApi.Client.MODULE_LIBRARIES)
+    public static final String NAMESPACE_TETHERING_NATIVE =
+            "tethering_u_or_later_native";
+
+    /**
+     * Namespace for all near field communication (nfc) related features.
+     *
+     * @hide
+     */
+    @SystemApi
+    public static final String NAMESPACE_NFC = "nfc";
+
     /**
      * The modes that can be used when disabling syncs to the 'config' settings.
      * @hide
@@ -974,7 +1021,7 @@ public final class DeviceConfig {
      */
     @SystemApi
     public static final int SYNC_DISABLED_MODE_UNTIL_REBOOT = 2;
-
+    
     private static final Object sLock = new Object();
     @GuardedBy("sLock")
     private static ArrayMap<OnPropertiesChangedListener, Pair<String, Executor>> sListeners =
@@ -982,6 +1029,11 @@ public final class DeviceConfig {
     @GuardedBy("sLock")
     private static Map<String, Pair<ContentObserver, Integer>> sNamespaces = new HashMap<>();
     private static final String TAG = "DeviceConfig";
+
+    private static final DeviceConfigDataStore sDataStore = new SettingsConfigDataStore();
+
+    private static final String DEVICE_CONFIG_OVERRIDES_NAMESPACE =
+            "device_config_overrides";
 
     /**
      * Interface for monitoring callback functions.
@@ -1043,6 +1095,8 @@ public final class DeviceConfig {
      * Each call to {@link #setProperties(Properties)} is also atomic and ensures that either none
      * or all of the change is picked up here, but never only part of it.
      *
+     * If there are any local overrides applied, they will take precedence over underlying values.
+     *
      * @param namespace The namespace containing the properties to look up.
      * @param names     The names of properties to look up, or empty to fetch all properties for the
      *                  given namespace.
@@ -1056,9 +1110,80 @@ public final class DeviceConfig {
      */
     @SystemApi
     @NonNull
-    public static Properties getProperties(@NonNull String namespace, @NonNull String ... names) {
-        return new Properties(namespace,
-                Settings.Config.getStrings(namespace, Arrays.asList(names)));
+    @RequiresPermission(READ_DEVICE_CONFIG)
+    public static Properties getProperties(@NonNull String namespace, @NonNull String... names) {
+        Properties propertiesWithoutOverrides =
+                getPropertiesWithoutOverrides(namespace, names);
+        if (SdkLevel.isAtLeastV()) {
+            return applyOverrides(propertiesWithoutOverrides);
+        } else {
+            return propertiesWithoutOverrides;
+        }
+    }
+
+    @NonNull
+    private static Properties getPropertiesWithoutOverrides(@NonNull String namespace,
+        @NonNull String... names) {
+        return sDataStore.getProperties(namespace, names);
+    }
+
+    private static Properties applyOverrides(@NonNull Properties properties) {
+        Properties overrides =
+                getPropertiesWithoutOverrides(DEVICE_CONFIG_OVERRIDES_NAMESPACE);
+        Map<String, String> newPropertiesMap = new HashMap<>();
+
+        HashSet<String> flags = new HashSet(properties.getKeyset());
+        for (String override : overrides.getKeyset()) {
+            String[] namespaceAndFlag = override.split(":");
+            if (properties.getNamespace().equals(namespaceAndFlag[0])) {
+                flags.add(namespaceAndFlag[1]);
+            }
+        }
+
+        for (String flag : flags) {
+            String override =
+                overrides.getString(properties.getNamespace() + ":" + flag, null);
+            if (override != null) {
+                newPropertiesMap.put(flag, override);
+            } else {
+                newPropertiesMap.put(flag, properties.getString(flag, null));
+            }
+        }
+        return new Properties(properties.getNamespace(), newPropertiesMap);
+    }
+
+    /**
+     * List all stored flags.
+     *
+     * The keys take the form {@code namespace/name}, and the values are the flag values.
+     *
+     * @hide
+     */
+    @SystemApi
+    @NonNull
+    public static Set<Properties> getAllProperties() {
+        Map<String, String> properties = sDataStore.getAllProperties();
+        Map<String, Map<String, String>> propertyMaps = new HashMap<>();
+        for (String flag : properties.keySet()) {
+            String[] namespaceAndFlag = flag.split("/");
+            String namespace = namespaceAndFlag[0];
+            String flagName = namespaceAndFlag[1];
+            String override =
+                    getProperty(DEVICE_CONFIG_OVERRIDES_NAMESPACE, namespace + ":" + flagName);
+
+            String value = override != null ? override : properties.get(flag);
+
+            if (!propertyMaps.containsKey(namespace)) {
+                propertyMaps.put(namespace, new HashMap<>());
+            }
+            propertyMaps.get(namespace).put(flagName, value);
+        }
+
+        HashSet<Properties> result = new HashSet<>();
+        for (Map.Entry<String, Map<String, String>> entry : propertyMaps.entrySet()) {
+            result.add(new Properties(entry.getKey(), entry.getValue()));
+        }
+        return result;
     }
 
     /**
@@ -1072,6 +1197,7 @@ public final class DeviceConfig {
      * @hide
      */
     @SystemApi
+    @RequiresPermission(READ_DEVICE_CONFIG)
     @Nullable
     public static String getString(@NonNull String namespace, @NonNull String name,
             @Nullable String defaultValue) {
@@ -1107,6 +1233,7 @@ public final class DeviceConfig {
      * @hide
      */
     @SystemApi
+    @RequiresPermission(READ_DEVICE_CONFIG)
     public static int getInt(@NonNull String namespace, @NonNull String name, int defaultValue) {
         String value = getProperty(namespace, name);
         if (value == null) {
@@ -1131,6 +1258,7 @@ public final class DeviceConfig {
      * @hide
      */
     @SystemApi
+    @RequiresPermission(READ_DEVICE_CONFIG)
     public static long getLong(@NonNull String namespace, @NonNull String name, long defaultValue) {
         String value = getProperty(namespace, name);
         if (value == null) {
@@ -1155,6 +1283,7 @@ public final class DeviceConfig {
      * @hide
      */
     @SystemApi
+    @RequiresPermission(READ_DEVICE_CONFIG)
     public static float getFloat(@NonNull String namespace, @NonNull String name,
             float defaultValue) {
         String value = getProperty(namespace, name);
@@ -1167,6 +1296,82 @@ public final class DeviceConfig {
             Log.e(TAG, "Parsing float failed for " + namespace + ":" + name);
             return defaultValue;
         }
+    }
+
+    /**
+     * Set flag {@code namespace/name} to {@code value}, and ignores server-updates for this flag.
+     *
+     * Can still be called even if there is no underlying value set.
+     *
+     * Returns {@code true} if successful, or {@code false} if the storage implementation throws
+     * errors.
+     *
+     * @hide
+     */
+    @SystemApi
+    @RequiresPermission(WRITE_DEVICE_CONFIG)
+    public static boolean setLocalOverride(@NonNull String namespace, @NonNull String name,
+        @NonNull String value) {
+        return setProperty(DEVICE_CONFIG_OVERRIDES_NAMESPACE, namespace + ":" + name, value, false);
+    }
+
+    /**
+     * Clear all local sticky overrides.
+     *
+     * @hide
+     */
+    @SystemApi
+    @RequiresPermission(WRITE_DEVICE_CONFIG)
+    public static void clearAllLocalOverrides() {
+        Properties overrides = getProperties(DEVICE_CONFIG_OVERRIDES_NAMESPACE);
+        for (String overrideName : overrides.getKeyset()) {
+            deleteProperty(DEVICE_CONFIG_OVERRIDES_NAMESPACE, overrideName);
+        }
+    }
+
+    /**
+     * Clear local sticky override for flag {@code namespace/name}.
+     *
+     * @hide
+     */
+    @SystemApi
+    @RequiresPermission(WRITE_DEVICE_CONFIG)
+    public static void clearLocalOverride(@NonNull String namespace,
+        @NonNull String name) {
+        deleteProperty(DEVICE_CONFIG_OVERRIDES_NAMESPACE, namespace + ":" + name);
+    }
+
+    /**
+     * Return a map containing all flags that have been overridden.
+     *
+     * The keys of the outer map are namespaces. They keys of the inner maps are
+     * flag names. The values of the inner maps are the underlying flag values
+     * (not to be confused with their overridden values).
+     *
+     * @hide
+     */
+    @NonNull
+    @SystemApi
+    public static Map<String, Map<String, String>> getUnderlyingValuesForOverriddenFlags() {
+        Properties overrides = getProperties(DEVICE_CONFIG_OVERRIDES_NAMESPACE);
+        HashMap<String, Map<String, String>> result = new HashMap<>();
+        for (Map.Entry<String, String> entry : overrides.getPropertyValues().entrySet()) {
+            String[] namespaceAndFlag = entry.getKey().split(":");
+            String namespace = namespaceAndFlag[0];
+            String flag = namespaceAndFlag[1];
+
+            String actualValue =
+                    getPropertiesWithoutOverrides(namespace, flag)
+                    .getString(flag, null);
+            if (result.get(namespace) != null) {
+                result.get(namespace).put(flag, actualValue);
+            } else {
+                HashMap<String, String> innerMap = new HashMap<>();
+                innerMap.put(flag, actualValue);
+                result.put(namespace, innerMap);
+            }
+        }
+        return result;
     }
 
     /**
@@ -1193,7 +1398,7 @@ public final class DeviceConfig {
     @RequiresPermission(anyOf = {WRITE_DEVICE_CONFIG, WRITE_ALLOWLISTED_DEVICE_CONFIG})
     public static boolean setProperty(@NonNull String namespace, @NonNull String name,
             @Nullable String value, boolean makeDefault) {
-        return Settings.Config.putString(namespace, name, value, makeDefault);
+        return sDataStore.setProperty(namespace, name, value, makeDefault);
     }
 
     /**
@@ -1214,8 +1419,7 @@ public final class DeviceConfig {
     @SystemApi
     @RequiresPermission(anyOf = {WRITE_DEVICE_CONFIG, WRITE_ALLOWLISTED_DEVICE_CONFIG})
     public static boolean setProperties(@NonNull Properties properties) throws BadConfigException {
-        return Settings.Config.setStrings(properties.getNamespace(),
-                properties.mMap);
+        return sDataStore.setProperties(properties);
     }
 
     /**
@@ -1230,7 +1434,7 @@ public final class DeviceConfig {
     @SystemApi
     @RequiresPermission(anyOf = {WRITE_DEVICE_CONFIG, WRITE_ALLOWLISTED_DEVICE_CONFIG})
     public static boolean deleteProperty(@NonNull String namespace, @NonNull String name) {
-        return Settings.Config.deleteString(namespace, name);
+        return sDataStore.deleteProperty(namespace, name);
     }
 
     /**
@@ -1261,7 +1465,7 @@ public final class DeviceConfig {
     @SystemApi
     @RequiresPermission(anyOf = {WRITE_DEVICE_CONFIG, WRITE_ALLOWLISTED_DEVICE_CONFIG})
     public static void resetToDefaults(int resetMode, @Nullable String namespace) {
-        Settings.Config.resetToDefaults(resetMode, namespace);
+        sDataStore.resetToDefaults(resetMode, namespace);
     }
 
     /**
@@ -1269,16 +1473,17 @@ public final class DeviceConfig {
      * config values. This is intended for use during tests to prevent a sync operation clearing
      * config values which could influence the outcome of the tests, i.e. by changing behavior.
      *
-     * @param syncDisabledMode the mode to use, see {@link #SYNC_DISABLED_MODE_NONE},
-     *     {@link #SYNC_DISABLED_MODE_PERSISTENT} and {@link #SYNC_DISABLED_MODE_UNTIL_REBOOT}
+     * @param syncDisabledMode the mode to use, see {@link Settings.Config#SYNC_DISABLED_MODE_NONE},
+     *     {@link Settings.Config#SYNC_DISABLED_MODE_PERSISTENT} and {@link
+     *     Settings.Config#SYNC_DISABLED_MODE_UNTIL_REBOOT}
      *
      * @see #getSyncDisabledMode()
      * @hide
      */
     @SystemApi
     @RequiresPermission(anyOf = {WRITE_DEVICE_CONFIG, READ_WRITE_SYNC_DISABLED_MODE_CONFIG})
-    public static void setSyncDisabledMode(@SyncDisabledMode int syncDisabledMode) {
-        Settings.Config.setSyncDisabledMode(syncDisabledMode);
+    public static void setSyncDisabledMode(int syncDisabledMode) {
+        sDataStore.setSyncDisabledMode(syncDisabledMode);
     }
 
     /**
@@ -1290,7 +1495,7 @@ public final class DeviceConfig {
     @SystemApi
     @RequiresPermission(anyOf = {WRITE_DEVICE_CONFIG, READ_WRITE_SYNC_DISABLED_MODE_CONFIG})
     public static int getSyncDisabledMode() {
-        return Settings.Config.getSyncDisabledMode();
+        return sDataStore.getSyncDisabledMode();
     }
 
     /**
@@ -1364,7 +1569,7 @@ public final class DeviceConfig {
             @NonNull ContentResolver resolver,
             @NonNull @CallbackExecutor Executor executor,
             @NonNull MonitorCallback callback) {
-        Settings.Config.setMonitorCallback(resolver, executor, callback);
+        sDataStore.setMonitorCallback(resolver, executor, callback);
     }
 
     /**
@@ -1376,7 +1581,7 @@ public final class DeviceConfig {
     @SystemApi
     @RequiresPermission(Manifest.permission.MONITOR_DEVICE_CONFIG_ACCESS)
     public static void clearMonitorCallback(@NonNull ContentResolver resolver) {
-        Settings.Config.clearMonitorCallback(resolver);
+        sDataStore.clearMonitorCallback(resolver);
     }
 
     /**
@@ -1402,7 +1607,7 @@ public final class DeviceConfig {
                     }
                 }
             };
-            Settings.Config
+            sDataStore
                     .registerContentObserver(namespace, true, contentObserver);
             sNamespaces.put(namespace, new Pair<>(contentObserver, 1));
         }
@@ -1426,7 +1631,7 @@ public final class DeviceConfig {
             sNamespaces.put(namespace, new Pair<>(namespaceCount.first, namespaceCount.second - 1));
         } else {
             // Decrementing a namespace to zero means we no longer need its ContentObserver.
-            Settings.Config.unregisterContentObserver(namespaceCount.first);
+            sDataStore.unregisterContentObserver(namespaceCount.first);
             sNamespaces.remove(namespace);
         }
     }
@@ -1652,6 +1857,15 @@ public final class DeviceConfig {
                 Log.e(TAG, "Parsing float failed for " + name);
                 return defaultValue;
             }
+        }
+
+        /**
+         * Returns a map with the underlying property values defined by this object
+         *
+         * @hide
+         */
+        public @NonNull Map<String, String> getPropertyValues() {
+            return new HashMap<>(mMap);
         }
 
         /**
