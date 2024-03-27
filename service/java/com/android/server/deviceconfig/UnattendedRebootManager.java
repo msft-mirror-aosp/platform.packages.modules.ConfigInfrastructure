@@ -14,6 +14,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.IntentSender;
+import android.content.pm.PackageManager.NameNotFoundException;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -173,7 +174,28 @@ final class UnattendedRebootManager {
 
     @Override
     public boolean requiresChargingForReboot(Context context) {
-      return context.getResources().getBoolean(R.bool.config_requireChargingForUnattendedReboot);
+      ServiceResourcesHelper resourcesHelper = ServiceResourcesHelper.get(context);
+      Optional<String> resourcesPackageName = resourcesHelper.getResourcesPackageName();
+      if (!resourcesPackageName.isPresent()) {
+        Log.w(TAG, "requiresChargingForReboot: unable to find resources package name");
+        return false;
+      }
+
+      Context resourcesContext;
+      try {
+          resourcesContext = context.createPackageContext(resourcesPackageName.get(), 0);
+      } catch (NameNotFoundException e) {
+          Log.e(TAG, "requiresChargingForReboot: Error in creating resources package context.", e);
+          return false;
+      }
+      if (resourcesContext == null) {
+        Log.w(TAG, "requiresChargingForReboot: unable to create resources context");
+        return false;
+      }
+
+      return resourcesContext
+          .getResources()
+          .getBoolean(R.bool.config_requireChargingForUnattendedReboot);
     }
 
     public void regularReboot(Context context) {
