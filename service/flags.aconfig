@@ -1,4 +1,5 @@
 package: "com.android.server.deviceconfig"
+container: "com.android.configinfrastructure"
 
 flag {
     name: "enable_reboot_notification"

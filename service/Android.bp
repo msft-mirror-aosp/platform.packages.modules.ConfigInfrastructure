@@ -55,6 +55,7 @@ java_sdk_library {
 aconfig_declarations {
     name: "device_config_reboot_flags",
     package: "com.android.server.deviceconfig",
+    container: "com.android.configinfrastructure",
     srcs: [
       "flags.aconfig",
     ],
