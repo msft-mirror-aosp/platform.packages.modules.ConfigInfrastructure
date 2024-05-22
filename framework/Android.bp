@@ -36,10 +36,30 @@ java_sdk_library {
         "//packages/modules/ConfigInfrastructure:__subpackages__",
     ],
     static_libs: [
+        "framework-configinfrastructure-flags-lib",
         "modules-utils-build",
     ],
     jarjar_rules: "jarjar-rules.txt",
     lint: {
         baseline_filename: "lint-baseline.xml",
     },
+}
+
+aconfig_declarations {
+    name: "framework-configinfrastructure-flags",
+    package: "android.provider.configinfrastructure.framework",
+    container: "com.android.configinfrastructure",
+    srcs: [
+        "flags.aconfig",
+    ],
+}
+
+java_aconfig_library {
+    name: "framework-configinfrastructure-flags-lib",
+    sdk_version: "module_current",
+    min_sdk_version: "34",
+    apex_available: [
+        "com.android.configinfrastructure",
+    ],
+    aconfig_declarations: "framework-configinfrastructure-flags",
 }

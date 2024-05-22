@@ -1,1 +1,13 @@
 // Signature format: 2.0
+package android.provider {
+
+  @FlaggedApi("android.provider.configinfrastructure.framework.enable_api_as_public") public final class DeviceConfig {
+    method @FlaggedApi("android.provider.configinfrastructure.framework.enable_api_as_public") @NonNull public static android.provider.DeviceConfig.Properties getProperties(@NonNull String, @NonNull java.lang.String...);
+  }
+
+  @FlaggedApi("android.provider.configinfrastructure.framework.enable_api_as_public") public static class DeviceConfig.Properties {
+    method @FlaggedApi("android.provider.configinfrastructure.framework.enable_api_as_public") public boolean getBoolean(@NonNull String, boolean);
+  }
+
+}
+
