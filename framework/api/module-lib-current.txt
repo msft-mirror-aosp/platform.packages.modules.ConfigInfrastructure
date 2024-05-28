@@ -1,7 +1,7 @@
 // Signature format: 2.0
 package android.provider {
 
-  @FlaggedApi("android.provider.configinfrastructure.framework.enable_api_as_public") public final class DeviceConfig {
+  public final class DeviceConfig {
     field public static final String NAMESPACE_ACTIVITY_MANAGER_COMPONENT_ALIAS = "activity_manager_ca";
     field public static final String NAMESPACE_ALARM_MANAGER = "alarm_manager";
     field public static final String NAMESPACE_APP_CLONING = "app_cloning";
@@ -35,7 +35,7 @@ package android.provider {
     field public static final String NAMESPACE_WINDOW_MANAGER = "window_manager";
   }
 
-  @FlaggedApi("android.provider.configinfrastructure.framework.enable_api_as_public") public static class DeviceConfig.Properties {
+  public static class DeviceConfig.Properties {
     ctor public DeviceConfig.Properties(@NonNull String, @Nullable java.util.Map<java.lang.String,java.lang.String>);
   }
 

@@ -41,7 +41,6 @@ bootclasspath_fragment {
         // result in a build failure due to inconsistent flags.
         package_prefixes: [
             "android.provider.aidl",
-            "android.provider.configinfrastructure.framework",
             "android.provider.internal.modules.utils.build",
         ],
     },
