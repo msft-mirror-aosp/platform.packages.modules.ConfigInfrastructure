@@ -23,7 +23,6 @@ import static android.Manifest.permission.READ_WRITE_SYNC_DISABLED_MODE_CONFIG;
 
 import android.Manifest;
 import android.annotation.CallbackExecutor;
-import android.annotation.FlaggedApi;
 import android.annotation.IntDef;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
@@ -58,7 +57,6 @@ import java.util.concurrent.Executor;
 import android.util.Log;
 
 import android.provider.aidl.IDeviceConfigManager;
-import android.provider.configinfrastructure.framework.Flags;
 import android.provider.DeviceConfigServiceManager;
 import android.provider.DeviceConfigInitializer;
 import android.os.IBinder;
@@ -67,8 +65,10 @@ import android.os.IBinder;
  * Device level configuration parameters which can be tuned by a separate configuration service.
  * Namespaces that end in "_native" such as {@link #NAMESPACE_NETD_NATIVE} are intended to be used
  * by native code and should be pushed to system properties to make them accessible.
+ *
+ * @hide
  */
-@FlaggedApi(Flags.FLAG_ENABLE_API_AS_PUBLIC)
+@SystemApi
 public final class DeviceConfig {
 
     /**
@@ -1106,9 +1106,11 @@ public final class DeviceConfig {
      *     of properties already set and properties requested via the names parameter. Properties
      *     that are already set but were not requested will not be contained here. Properties that
      *     are not set, but were requested will not be contained here either.
+     * @hide
      */
-    @FlaggedApi(Flags.FLAG_ENABLE_API_AS_PUBLIC)
+    @SystemApi
     @NonNull
+    @RequiresPermission(READ_DEVICE_CONFIG)
     public static Properties getProperties(@NonNull String namespace, @NonNull String... names) {
         Properties properties = getPropertiesWithoutOverrides(namespace, names);
         if (SdkLevel.isAtLeastV()) {
@@ -1717,8 +1719,10 @@ public final class DeviceConfig {
 
     /**
      * A mapping of properties to values, as well as a single namespace which they all belong to.
+     *
+     * @hide
      */
-    @FlaggedApi(Flags.FLAG_ENABLE_API_AS_PUBLIC)
+    @SystemApi
     public static class Properties {
         private final String mNamespace;
         private final HashMap<String, String> mMap;
@@ -1743,21 +1747,15 @@ public final class DeviceConfig {
 
         /**
          * @return the namespace all properties within this instance belong to.
-         *
-         * @hide
          */
         @NonNull
-        @SystemApi
         public String getNamespace() {
             return mNamespace;
         }
 
         /**
          * @return the non-null set of property names.
-         *
-         * @hide
          */
-        @SystemApi
         @NonNull
         public Set<String> getKeyset() {
             if (mKeyset == null) {
@@ -1772,10 +1770,7 @@ public final class DeviceConfig {
          * @param name         The name of the property to look up.
          * @param defaultValue The value to return if the property has not been defined.
          * @return the corresponding value, or defaultValue if none exists.
-         *
-         * @hide
          */
-        @SystemApi
         @Nullable
         public String getString(@NonNull String name, @Nullable String defaultValue) {
             Objects.requireNonNull(name);
@@ -1801,9 +1796,7 @@ public final class DeviceConfig {
          * @param name         The name of the property to look up.
          * @param defaultValue The value to return if the property has not been defined.
          * @return the corresponding value, or defaultValue if none exists.
-         *
          */
-        @FlaggedApi(Flags.FLAG_ENABLE_API_AS_PUBLIC)
         public boolean getBoolean(@NonNull String name, boolean defaultValue) {
             Objects.requireNonNull(name);
             String value = mMap.get(name);
@@ -1817,10 +1810,7 @@ public final class DeviceConfig {
          * @param defaultValue The value to return if the property has not been defined or fails to
          *                     parse into an int.
          * @return the corresponding value, or defaultValue if no valid int is available.
-         *
-         * @hide
          */
-        @SystemApi
         public int getInt(@NonNull String name, int defaultValue) {
             Objects.requireNonNull(name);
             String value = mMap.get(name);
@@ -1842,10 +1832,7 @@ public final class DeviceConfig {
          * @param defaultValue The value to return if the property has not been defined. or fails to
          *                     parse into a long.
          * @return the corresponding value, or defaultValue if no valid long is available.
-         *
-         * @hide
          */
-        @SystemApi
         public long getLong(@NonNull String name, long defaultValue) {
             Objects.requireNonNull(name);
             String value = mMap.get(name);
@@ -1867,10 +1854,7 @@ public final class DeviceConfig {
          * @param defaultValue The value to return if the property has not been defined. or fails to
          *                     parse into a float.
          * @return the corresponding value, or defaultValue if no valid float is available.
-         *
-         * @hide
          */
-        @SystemApi
         public float getFloat(@NonNull String name, float defaultValue) {
             Objects.requireNonNull(name);
             String value = mMap.get(name);
@@ -1896,10 +1880,7 @@ public final class DeviceConfig {
 
         /**
          * Builder class for the construction of {@link Properties} objects.
-         *
-         * @hide
          */
-        @SystemApi
         public static final class Builder {
             @NonNull
             private final String mNamespace;
