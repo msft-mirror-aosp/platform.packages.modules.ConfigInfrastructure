@@ -11,6 +11,7 @@ import static com.android.server.deviceconfig.UnattendedRebootManager.ACTION_TRI
 import static com.google.common.truth.Truth.assertThat;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assume.assumeTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
@@ -47,6 +48,8 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 
+import com.android.modules.utils.build.SdkLevel;
+
 @SmallTest
 public class UnattendedRebootManagerTest {
 
@@ -79,6 +82,8 @@ public class UnattendedRebootManagerTest {
 
   @Before
   public void setUp() throws Exception {
+    assumeTrue(SdkLevel.isAtLeastV());
+
     mSetFlagsRule.enableFlags(
         FLAG_ENABLE_SIM_PIN_REPLAY, FLAG_ENABLE_CHARGER_DEPENDENCY_FOR_REBOOT);
 
@@ -147,6 +152,8 @@ public class UnattendedRebootManagerTest {
 
   @Test
   public void maybePrepareUnattendedReboot() {
+    assumeTrue(SdkLevel.isAtLeastV());
+
     // After normal flow
     Log.i(TAG, "maybePrepareUnattendedReboot");
     when(mKeyguardManager.isDeviceSecure()).thenReturn(true);
@@ -158,6 +165,8 @@ public class UnattendedRebootManagerTest {
 
   @Test
   public void scheduleReboot() {
+    assumeTrue(SdkLevel.isAtLeastV());
+
     Log.i(TAG, "scheduleReboot");
     when(mKeyguardManager.isDeviceSecure()).thenReturn(true);
     when(mConnectivityManager.getNetworkCapabilities(any()))
@@ -178,6 +187,8 @@ public class UnattendedRebootManagerTest {
 
   @Test
   public void scheduleReboot_requiresCharging_notCharging() {
+    assumeTrue(SdkLevel.isAtLeastV());
+
     Log.i(TAG, "scheduleReboot_requiresCharging_notCharging");
     when(mKeyguardManager.isDeviceSecure()).thenReturn(true);
     when(mConnectivityManager.getNetworkCapabilities(any()))
@@ -214,6 +225,7 @@ public class UnattendedRebootManagerTest {
 
   @Test
   public void scheduleReboot_doesNotRequireCharging_notCharging() {
+    assumeTrue(SdkLevel.isAtLeastV());
     Log.i(TAG, "scheduleReboot_doesNotRequireCharging_notCharging");
     when(mKeyguardManager.isDeviceSecure()).thenReturn(true);
     when(mConnectivityManager.getNetworkCapabilities(any()))
@@ -240,6 +252,7 @@ public class UnattendedRebootManagerTest {
 
   @Test
   public void scheduleReboot_requiresCharging_flagNotEnabled() {
+    assumeTrue(SdkLevel.isAtLeastV());
     Log.i(TAG, "scheduleReboot_requiresCharging_flagNotEnabled");
     when(mKeyguardManager.isDeviceSecure()).thenReturn(true);
     when(mConnectivityManager.getNetworkCapabilities(any()))
@@ -266,6 +279,7 @@ public class UnattendedRebootManagerTest {
 
   @Test
   public void scheduleReboot_noPinLock() {
+    assumeTrue(SdkLevel.isAtLeastV());
     Log.i(TAG, "scheduleReboot_noPinLock");
     when(mKeyguardManager.isDeviceSecure()).thenReturn(false);
     when(mConnectivityManager.getNetworkCapabilities(any()))
@@ -286,6 +300,7 @@ public class UnattendedRebootManagerTest {
 
   @Test
   public void scheduleReboot_noPreparation() {
+    assumeTrue(SdkLevel.isAtLeastV());
     Log.i(TAG, "scheduleReboot_noPreparation");
     when(mKeyguardManager.isDeviceSecure()).thenReturn(true);
     when(mConnectivityManager.getNetworkCapabilities(any()))
@@ -305,6 +320,7 @@ public class UnattendedRebootManagerTest {
 
   @Test
   public void scheduleReboot_simPinPreparationFailed() {
+    assumeTrue(SdkLevel.isAtLeastV());
     Log.i(TAG, "scheduleReboot");
     when(mKeyguardManager.isDeviceSecure()).thenReturn(true);
     when(mConnectivityManager.getNetworkCapabilities(any()))
@@ -325,6 +341,7 @@ public class UnattendedRebootManagerTest {
 
   @Test
   public void scheduleReboot_noInternet() {
+    assumeTrue(SdkLevel.isAtLeastV());
     Log.i(TAG, "scheduleReboot_noInternet");
     when(mKeyguardManager.isDeviceSecure()).thenReturn(true);
     when(mConnectivityManager.getNetworkCapabilities(any())).thenReturn(new NetworkCapabilities());
@@ -341,6 +358,7 @@ public class UnattendedRebootManagerTest {
 
   @Test
   public void scheduleReboot_noInternetValidation() {
+    assumeTrue(SdkLevel.isAtLeastV());
     Log.i(TAG, "scheduleReboot_noInternetValidation");
     when(mKeyguardManager.isDeviceSecure()).thenReturn(true);
     when(mConnectivityManager.getNetworkCapabilities(any()))
@@ -361,15 +379,18 @@ public class UnattendedRebootManagerTest {
 
   @Test
   public void scheduleReboot_elapsedRealtimeLessThanFrequency_withDefaultTimeConfigurations() {
+    assumeTrue(SdkLevel.isAtLeastV());
     scheduleReboot_elapsedRealtimeLessThanFrequency(/* enableCustomTimeConfig= */ false);
   }
 
   @Test
   public void scheduleReboot_elapsedRealtimeLessThanFrequency_withCustomTimeConfigurations() {
+    assumeTrue(SdkLevel.isAtLeastV());
     scheduleReboot_elapsedRealtimeLessThanFrequency(/* enableCustomTimeConfig= */ true);
   }
 
   private void scheduleReboot_elapsedRealtimeLessThanFrequency(boolean enableCustomTimeConfig) {
+    assumeTrue(SdkLevel.isAtLeastV());
     if (enableCustomTimeConfig) {
       mSetFlagsRule.enableFlags(FLAG_ENABLE_CUSTOM_REBOOT_TIME_CONFIGURATIONS);
     } else {
@@ -396,15 +417,18 @@ public class UnattendedRebootManagerTest {
 
   @Test
   public void tryRebootOrSchedule_outsideRebootWindow_withDefaultTimeConfigurations() {
+    assumeTrue(SdkLevel.isAtLeastV());
     tryRebootOrSchedule_outsideRebootWindow(/* enableCustomTimeConfig= */ false);
   }
 
   @Test
   public void tryRebootOrSchedule_outsideRebootWindow_withCustomTimeConfigurations() {
+    assumeTrue(SdkLevel.isAtLeastV());
     tryRebootOrSchedule_outsideRebootWindow(/* enableCustomTimeConfig= */ true);
   }
 
   private void tryRebootOrSchedule_outsideRebootWindow(boolean enableCustomTimeConfig) {
+    assumeTrue(SdkLevel.isAtLeastV());
     if (enableCustomTimeConfig) {
       mSetFlagsRule.enableFlags(FLAG_ENABLE_CUSTOM_REBOOT_TIME_CONFIGURATIONS);
     }
