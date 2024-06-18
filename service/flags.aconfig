@@ -20,3 +20,17 @@ flag {
   description: "This flag controls enabling sim pin replay for unattended reboot."
   bug: "305269414"
 }
+
+flag {
+  name: "enable_custom_reboot_time_configurations"
+  namespace: "core_experiments_team_internal"
+  description: "This flags controls allowing devices to configure the reboot window and frequency."
+  bug: "322076175"
+}
+
+flag {
+  name: "enable_charger_dependency_for_reboot"
+  namespace: "core_experiments_team_internal"
+  description: "This flags controls allowing devices to configure reboot to require charging."
+  bug: "322076175"
+}

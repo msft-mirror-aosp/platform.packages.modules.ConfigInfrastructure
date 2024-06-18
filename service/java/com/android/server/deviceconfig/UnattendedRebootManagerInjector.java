@@ -45,6 +45,8 @@ interface UnattendedRebootManagerInjector {
 
   boolean isPreparedForUnattendedUpdate(@NonNull Context context) throws IOException;
 
+  boolean requiresChargingForReboot(Context context);
+
   /** Regular reboot injector. */
   void regularReboot(Context context);
 }
