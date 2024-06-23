@@ -1112,13 +1112,11 @@ public final class DeviceConfig {
     @NonNull
     @RequiresPermission(READ_DEVICE_CONFIG)
     public static Properties getProperties(@NonNull String namespace, @NonNull String... names) {
-        Properties propertiesWithoutOverrides =
-                getPropertiesWithoutOverrides(namespace, names);
+        Properties properties = getPropertiesWithoutOverrides(namespace, names);
         if (SdkLevel.isAtLeastV()) {
-            return applyOverrides(propertiesWithoutOverrides);
-        } else {
-            return propertiesWithoutOverrides;
+            applyOverrides(properties);
         }
+        return properties;
     }
 
     @NonNull
@@ -1127,29 +1125,20 @@ public final class DeviceConfig {
         return sDataStore.getProperties(namespace, names);
     }
 
-    private static Properties applyOverrides(@NonNull Properties properties) {
+    private static void applyOverrides(@NonNull Properties properties) {
         Properties overrides =
                 getPropertiesWithoutOverrides(DEVICE_CONFIG_OVERRIDES_NAMESPACE);
-        Map<String, String> newPropertiesMap = new HashMap<>();
 
-        HashSet<String> flags = new HashSet(properties.getKeyset());
-        for (String override : overrides.getKeyset()) {
-            String[] namespaceAndFlag = override.split(":");
-            if (properties.getNamespace().equals(namespaceAndFlag[0])) {
-                flags.add(namespaceAndFlag[1]);
+        final String prefix = properties.getNamespace() + ':';
+        final int prefixLength = prefix.length();
+
+        for (var override : overrides.getMap().entrySet()) {
+            String fullKey = override.getKey();
+            String value = override.getValue();
+            if (value != null && fullKey.startsWith(prefix)) {
+                properties.setString(fullKey.substring(prefixLength), value);
             }
         }
-
-        for (String flag : flags) {
-            String override =
-                overrides.getString(properties.getNamespace() + ":" + flag, null);
-            if (override != null) {
-                newPropertiesMap.put(flag, override);
-            } else {
-                newPropertiesMap.put(flag, properties.getString(flag, null));
-            }
-        }
-        return new Properties(properties.getNamespace(), newPropertiesMap);
     }
 
     /**
@@ -1641,19 +1630,28 @@ public final class DeviceConfig {
         List<String> pathSegments = uri.getPathSegments();
         // pathSegments(0) is "config"
         final String namespace = pathSegments.get(1);
-        Properties.Builder propBuilder = new Properties.Builder(namespace);
-        try {
-            Properties allProperties = getProperties(namespace);
+        final Properties properties;
+        if (pathSegments.size() > 2) {
+            String[] keys = new String[pathSegments.size() - 2];
             for (int i = 2; i < pathSegments.size(); ++i) {
-                String key = pathSegments.get(i);
-                propBuilder.setString(key, allProperties.getString(key, null));
+                keys[i - 2] = pathSegments.get(i);
             }
-        } catch (SecurityException e) {
-            // Silently failing to not crash binder or listener threads.
-            Log.e(TAG, "OnPropertyChangedListener update failed: permission violation.");
-            return;
+
+            try {
+                properties = getProperties(namespace, keys);
+            } catch (SecurityException e) {
+                // Silently failing to not crash binder or listener threads.
+                Log.e(TAG, "OnPropertyChangedListener update failed: permission violation.");
+                return;
+            }
+
+            // Make sure all keys are present.
+            for (String key : keys) {
+                properties.setString(key, properties.getString(key, null));
+            }
+        } else {
+            properties = new Properties.Builder(namespace).build();
         }
-        Properties properties = propBuilder.build();
 
         synchronized (sLock) {
             for (int i = 0; i < sListeners.size(); i++) {
@@ -1780,6 +1778,18 @@ public final class DeviceConfig {
             return value != null ? value : defaultValue;
         }
 
+        @Nullable
+        private String setString(@NonNull String name, @Nullable String value) {
+            Objects.requireNonNull(name);
+            mKeyset = null;
+            return mMap.put(name, value);
+        }
+
+        @NonNull
+        private Map<String, String> getMap() {
+            return mMap;
+        }
+
         /**
          * Look up the boolean value of a property.
          *
@@ -1865,7 +1875,7 @@ public final class DeviceConfig {
          * @hide
          */
         public @NonNull Map<String, String> getPropertyValues() {
-            return new HashMap<>(mMap);
+            return Collections.unmodifiableMap(mMap);
         }
 
         /**

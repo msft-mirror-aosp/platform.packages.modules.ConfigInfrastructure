@@ -1,6 +1,8 @@
 package com.android.server.deviceconfig;
 
 import static androidx.test.platform.app.InstrumentationRegistry.getInstrumentation;
+import static com.android.server.deviceconfig.Flags.FLAG_ENABLE_CHARGER_DEPENDENCY_FOR_REBOOT;
+import static com.android.server.deviceconfig.Flags.FLAG_ENABLE_CUSTOM_REBOOT_TIME_CONFIGURATIONS;
 import static com.android.server.deviceconfig.Flags.FLAG_ENABLE_SIM_PIN_REPLAY;
 
 import static com.android.server.deviceconfig.UnattendedRebootManager.ACTION_RESUME_ON_REBOOT_LSKF_CAPTURED;
@@ -9,7 +11,9 @@ import static com.google.common.truth.Truth.assertThat;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import android.platform.test.flag.junit.SetFlagsRule;
@@ -22,18 +26,25 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.IntentSender;
+import android.content.res.Resources;
 import android.net.ConnectivityManager;
 import android.net.NetworkCapabilities;
+import android.os.BatteryManager;
 import android.util.Log;
 
 import androidx.test.filters.SmallTest;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Queue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
+import org.mockito.ArgumentCaptor;
 
 @SmallTest
 public class UnattendedRebootManagerTest {
@@ -52,9 +63,13 @@ public class UnattendedRebootManagerTest {
           1696669920000L; // 2023-10-07T02:12:00
   private static final long ELAPSED_REALTIME_1_DAY = 86400000L;
 
+  private final List<BroadcastReceiverRegistration> mRegisteredReceivers = new ArrayList<>();
+
   private Context mContext;
+  private BatteryManager mBatterManager;
   private KeyguardManager mKeyguardManager;
   private ConnectivityManager mConnectivityManager;
+  private RebootTimingConfiguration mRebootTimingConfiguration;
   private FakeInjector mFakeInjector;
   private UnattendedRebootManager mRebootManager;
   private SimPinReplayManager mSimPinReplayManager;
@@ -65,11 +80,16 @@ public class UnattendedRebootManagerTest {
 
   @Before
   public void setUp() throws Exception {
-    mSetFlagsRule.enableFlags(FLAG_ENABLE_SIM_PIN_REPLAY);
+    mSetFlagsRule.enableFlags(
+        FLAG_ENABLE_SIM_PIN_REPLAY, FLAG_ENABLE_CHARGER_DEPENDENCY_FOR_REBOOT);
 
     mSimPinReplayManager = mock(SimPinReplayManager.class);
     mKeyguardManager = mock(KeyguardManager.class);
     mConnectivityManager = mock(ConnectivityManager.class);
+    mBatterManager = mock(BatteryManager.class);
+
+    mRebootTimingConfiguration =
+        new RebootTimingConfiguration(REBOOT_START_HOUR, REBOOT_END_HOUR, REBOOT_FREQUENCY);
 
     mContext =
         new ContextWrapper(getInstrumentation().getTargetContext()) {
@@ -79,13 +99,24 @@ public class UnattendedRebootManagerTest {
               return mKeyguardManager;
             } else if (name.equals(Context.CONNECTIVITY_SERVICE)) {
               return mConnectivityManager;
+            } else if (name.equals(Context.BATTERY_SERVICE)) {
+              return mBatterManager;
             }
             return super.getSystemService(name);
+          }
+
+          @Override
+          public Intent registerReceiver(
+              @Nullable BroadcastReceiver receiver, IntentFilter filter, int flags) {
+            mRegisteredReceivers.add(new BroadcastReceiverRegistration(receiver, filter, flags));
+            return super.registerReceiver(receiver, filter, flags);
           }
         };
 
     mFakeInjector = new FakeInjector();
-    mRebootManager = new UnattendedRebootManager(mContext, mFakeInjector, mSimPinReplayManager);
+    mRebootManager =
+        new UnattendedRebootManager(
+            mContext, mFakeInjector, mSimPinReplayManager, mRebootTimingConfiguration);
 
     // Need to register receiver in tests so that the test doesn't trigger reboot requested by
     // deviceconfig.
@@ -100,6 +131,9 @@ public class UnattendedRebootManagerTest {
         Context.RECEIVER_EXPORTED);
 
     mFakeInjector.setElapsedRealtime(ELAPSED_REALTIME_1_DAY);
+
+    mFakeInjector.setRequiresChargingForReboot(true);
+    when(mBatterManager.isCharging()).thenReturn(true);
   }
 
   @Test
@@ -120,6 +154,93 @@ public class UnattendedRebootManagerTest {
     assertTrue(mFakeInjector.isRebootAndApplied());
     assertFalse(mFakeInjector.isRegularRebooted());
     assertThat(mFakeInjector.getActualRebootTime()).isEqualTo(REBOOT_TIME);
+  }
+
+  @Test
+  public void scheduleReboot_requiresCharging_notCharging() {
+    Log.i(TAG, "scheduleReboot_requiresCharging_notCharging");
+    when(mKeyguardManager.isDeviceSecure()).thenReturn(true);
+    when(mConnectivityManager.getNetworkCapabilities(any()))
+        .thenReturn(
+            new NetworkCapabilities.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                .build());
+    when(mSimPinReplayManager.prepareSimPinReplay()).thenReturn(true);
+    mSetFlagsRule.enableFlags(FLAG_ENABLE_CHARGER_DEPENDENCY_FOR_REBOOT);
+    mFakeInjector.setRequiresChargingForReboot(true);
+    when(mBatterManager.isCharging()).thenReturn(false);
+
+    mRebootManager.prepareUnattendedReboot();
+    mRebootManager.scheduleReboot();
+
+    // Charging is required and device is not charging, so reboot should not be triggered.
+    assertFalse(mFakeInjector.isRebootAndApplied());
+    assertFalse(mFakeInjector.isRegularRebooted());
+    assertThat(mFakeInjector.getActualRebootTime()).isEqualTo(REBOOT_TIME);
+    List<BroadcastReceiverRegistration> chargingStateReceiverRegistrations =
+        getRegistrationsForAction(BatteryManager.ACTION_CHARGING);
+    assertThat(chargingStateReceiverRegistrations).hasSize(1);
+
+    // Now mimic a change in a charging state changed, and verify that we do the reboot once device
+    // is charging.
+    when(mBatterManager.isCharging()).thenReturn(true);
+    BroadcastReceiver chargingStateReceiver = chargingStateReceiverRegistrations.get(0).mReceiver;
+    chargingStateReceiver.onReceive(mContext, new Intent(BatteryManager.ACTION_CHARGING));
+
+    assertTrue(mFakeInjector.isRebootAndApplied());
+  }
+
+  @Test
+  public void scheduleReboot_doesNotRequireCharging_notCharging() {
+    Log.i(TAG, "scheduleReboot_doesNotRequireCharging_notCharging");
+    when(mKeyguardManager.isDeviceSecure()).thenReturn(true);
+    when(mConnectivityManager.getNetworkCapabilities(any()))
+        .thenReturn(
+            new NetworkCapabilities.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                .build());
+    when(mSimPinReplayManager.prepareSimPinReplay()).thenReturn(true);
+    mSetFlagsRule.enableFlags(FLAG_ENABLE_CHARGER_DEPENDENCY_FOR_REBOOT);
+    mFakeInjector.setRequiresChargingForReboot(false);
+    when(mBatterManager.isCharging()).thenReturn(false);
+
+    mRebootManager.prepareUnattendedReboot();
+    mRebootManager.scheduleReboot();
+
+    // Charging is not required, so reboot should be triggered despite the fact that the device
+    // is not charging.
+    assertTrue(mFakeInjector.isRebootAndApplied());
+    assertFalse(mFakeInjector.isRegularRebooted());
+    assertThat(mFakeInjector.getActualRebootTime()).isEqualTo(REBOOT_TIME);
+    assertThat(getRegistrationsForAction(BatteryManager.ACTION_CHARGING)).isEmpty();
+  }
+
+  @Test
+  public void scheduleReboot_requiresCharging_flagNotEnabled() {
+    Log.i(TAG, "scheduleReboot_requiresCharging_flagNotEnabled");
+    when(mKeyguardManager.isDeviceSecure()).thenReturn(true);
+    when(mConnectivityManager.getNetworkCapabilities(any()))
+        .thenReturn(
+            new NetworkCapabilities.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                .build());
+    when(mSimPinReplayManager.prepareSimPinReplay()).thenReturn(true);
+    mSetFlagsRule.disableFlags(FLAG_ENABLE_CHARGER_DEPENDENCY_FOR_REBOOT);
+    mFakeInjector.setRequiresChargingForReboot(true);
+    when(mBatterManager.isCharging()).thenReturn(false);
+
+    mRebootManager.prepareUnattendedReboot();
+    mRebootManager.scheduleReboot();
+
+    // Charging is required, but the flag that controls the feature to depend on charging is not
+    // enabled, so eboot should be triggered despite the fact that the device is not charging.
+    assertTrue(mFakeInjector.isRebootAndApplied());
+    assertFalse(mFakeInjector.isRegularRebooted());
+    assertThat(mFakeInjector.getActualRebootTime()).isEqualTo(REBOOT_TIME);
+    assertThat(getRegistrationsForAction(BatteryManager.ACTION_CHARGING)).isEmpty();
   }
 
   @Test
@@ -218,7 +339,21 @@ public class UnattendedRebootManagerTest {
   }
 
   @Test
-  public void scheduleReboot_elapsedRealtimeLessThanFrequency() {
+  public void scheduleReboot_elapsedRealtimeLessThanFrequency_withDefaultTimeConfigurations() {
+    scheduleReboot_elapsedRealtimeLessThanFrequency(/* enableCustomTimeConfig= */ false);
+  }
+
+  @Test
+  public void scheduleReboot_elapsedRealtimeLessThanFrequency_withCustomTimeConfigurations() {
+    scheduleReboot_elapsedRealtimeLessThanFrequency(/* enableCustomTimeConfig= */ true);
+  }
+
+  private void scheduleReboot_elapsedRealtimeLessThanFrequency(boolean enableCustomTimeConfig) {
+    if (enableCustomTimeConfig) {
+      mSetFlagsRule.enableFlags(FLAG_ENABLE_CUSTOM_REBOOT_TIME_CONFIGURATIONS);
+    } else {
+      mSetFlagsRule.disableFlags(FLAG_ENABLE_CUSTOM_REBOOT_TIME_CONFIGURATIONS);
+    }
     Log.i(TAG, "scheduleReboot_elapsedRealtimeLessThanFrequency");
     when(mKeyguardManager.isDeviceSecure()).thenReturn(true);
     when(mConnectivityManager.getNetworkCapabilities(any()))
@@ -239,7 +374,19 @@ public class UnattendedRebootManagerTest {
   }
 
   @Test
-  public void tryRebootOrSchedule_outsideRebootWindow() {
+  public void tryRebootOrSchedule_outsideRebootWindow_withDefaultTimeConfigurations() {
+    tryRebootOrSchedule_outsideRebootWindow(/* enableCustomTimeConfig= */ false);
+  }
+
+  @Test
+  public void tryRebootOrSchedule_outsideRebootWindow_withCustomTimeConfigurations() {
+    tryRebootOrSchedule_outsideRebootWindow(/* enableCustomTimeConfig= */ true);
+  }
+
+  private void tryRebootOrSchedule_outsideRebootWindow(boolean enableCustomTimeConfig) {
+    if (enableCustomTimeConfig) {
+      mSetFlagsRule.enableFlags(FLAG_ENABLE_CUSTOM_REBOOT_TIME_CONFIGURATIONS);
+    }
     Log.i(TAG, "scheduleReboot_internetOutsideRebootWindow");
     when(mKeyguardManager.isDeviceSecure()).thenReturn(true);
     when(mConnectivityManager.getNetworkCapabilities(any()))
@@ -265,6 +412,7 @@ public class UnattendedRebootManagerTest {
   static class FakeInjector implements UnattendedRebootManagerInjector {
 
     private boolean isPreparedForUnattendedReboot;
+    private boolean requiresChargingForReboot;
     private boolean rebootAndApplied;
     private boolean regularRebooted;
     private boolean requestedNetwork;
@@ -291,6 +439,15 @@ public class UnattendedRebootManagerTest {
     @Override
     public boolean isPreparedForUnattendedUpdate(@NonNull Context context) {
       return isPreparedForUnattendedReboot;
+    }
+
+    @Override
+    public boolean requiresChargingForReboot(Context context) {
+      return requiresChargingForReboot;
+    }
+
+    void setRequiresChargingForReboot(boolean requiresCharging) {
+      requiresChargingForReboot = requiresCharging;
     }
 
     @Override
@@ -403,6 +560,26 @@ public class UnattendedRebootManagerTest {
       } catch (InterruptedException e) {
         throw new RuntimeException(e);
       }
+    }
+  }
+
+  private List<BroadcastReceiverRegistration> getRegistrationsForAction(String action) {
+    return mRegisteredReceivers
+        .stream()
+        .filter(r -> r.mFilter.hasAction(action))
+        .collect(Collectors.toList());
+  }
+
+  /** Data class to store BroadcastReceiver registration info. */
+  private static final class BroadcastReceiverRegistration {
+    final BroadcastReceiver mReceiver;
+    final IntentFilter mFilter;
+    final int mFlags;
+
+    BroadcastReceiverRegistration(BroadcastReceiver receiver, IntentFilter filter, int flags) {
+      mReceiver = receiver;
+      mFilter = filter;
+      mFlags = flags;
     }
   }
 }

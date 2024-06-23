@@ -41,6 +41,12 @@ public class DeviceConfigInit {
     private static final String SYSTEM_EXT_FLAGS_PATH = "/system_ext/etc/aconfig_flags.pb";
     private static final String VENDOR_FLAGS_PATH = "/vendor/etc/aconfig_flags.pb";
 
+    private static final String CONFIGURATION_NAMESPACE = "configuration";
+    private static final String BOOT_NOTIFICATION_FLAG =
+        "ConfigInfraFlags__enable_boot_notification";
+    private static final String UNATTENDED_REBOOT_FLAG =
+        "ConfigInfraFlags__enable_unattended_reboot";
+
     private DeviceConfigInit() {
         // do not instantiate
     }
@@ -69,7 +75,9 @@ public class DeviceConfigInit {
          */
         @Override
         public void onStart() {
-            if (enableRebootNotification()) {
+            boolean notificationEnabled =
+                DeviceConfig.getBoolean(CONFIGURATION_NAMESPACE, BOOT_NOTIFICATION_FLAG, false);
+            if (notificationEnabled && enableRebootNotification()) {
                 Map<String, Set<String>> aconfigFlags = new HashMap<>();
                 try {
                     addAconfigFlagsFromFile(aconfigFlags, SYSTEM_FLAGS_PATH);
@@ -89,7 +97,14 @@ public class DeviceConfigInit {
                     notifCreator);
             }
 
-            if (enableUnattendedReboot()) {
+            boolean unattendedRebootEnabled =
+                DeviceConfig.getBoolean(CONFIGURATION_NAMESPACE, UNATTENDED_REBOOT_FLAG, false);
+            if (unattendedRebootEnabled && enableUnattendedReboot()) {
+                // Only schedule a reboot if this is the first boot since an OTA.
+                if (!getContext().getPackageManager().isDeviceUpgrading()) {
+                    return;
+                }
+
                 mUnattendedRebootManager =
                     new UnattendedRebootManager(getContext().getApplicationContext());
                 getContext()
