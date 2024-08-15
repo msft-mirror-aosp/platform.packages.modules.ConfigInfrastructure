@@ -87,7 +87,7 @@ apex {
         "com.android.configinfrastructure-systemserverclasspath-fragment",
     ],
     manifest: "manifest.json",
-    file_contexts: ":apex.test-file_contexts",
+    file_contexts: ":com.android.configinfrastructure-file_contexts",
     prebuilts: [
         "current_sdkinfo",
     ],
