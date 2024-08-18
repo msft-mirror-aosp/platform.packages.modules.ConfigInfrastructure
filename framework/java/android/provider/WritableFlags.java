@@ -609,7 +609,6 @@ final class WritableFlags {
                 "device_personalization_services/enable_image_selection_adjustments",
                 "device_personalization_services/enable_indirect_insights",
                 "device_personalization_services/enable_input_context_snapshot_capture",
-                "device_personalization_services/enable_instagram_action",
                 "device_personalization_services/enable_interactions_scoring_table",
                 "device_personalization_services/enable_interests_model",
                 "device_personalization_services/enable_interests_model_asr_biasing",
