@@ -1,0 +1,10 @@
+package: "android.provider.flags"
+container: "com.android.configinfrastructure"
+
+flag {
+  name: "stage_flags_for_build"
+  namespace: "core_experiments_team_internal"
+  description: "API flag for stageFlagsForBuild"
+  bug: "360384952"
+  is_exported: true
+}

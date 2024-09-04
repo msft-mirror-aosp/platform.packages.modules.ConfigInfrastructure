@@ -47,11 +47,11 @@ android_test {
         "flag-junit",
     ],
     libs: [
-        "android.test.base",
-        "android.test.mock",
-        "android.test.runner",
+        "android.test.base.stubs.system",
+        "android.test.mock.stubs.system",
+        "android.test.runner.stubs.system",
         "framework-connectivity.stubs.module_lib",
-        "framework-configinfrastructure",
+        "framework-configinfrastructure.stubs.module_lib",
         "DeviceConfigServiceResources",
     ],
     // Test coverage system runs on different devices. Need to
