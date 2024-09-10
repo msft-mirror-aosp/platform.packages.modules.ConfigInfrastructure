@@ -46,13 +46,20 @@ public class RebootTimingConfigurationTest {
     @Rule public final SetFlagsRule mSetFlagsRule = new SetFlagsRule();
     @Rule public MockitoRule mockitoRule = MockitoJUnit.rule();
 
+    private static final String TEST_RESOURCES_PACKAGE_NAME =
+            "abc.android.server.deviceconfig.resources";
+
     @Mock private Context mContext;
     @Mock private Resources mResources;
+    @Mock private ServiceResourcesHelper mResourcesHelper;
 
     @Before
     public void setUp() throws Exception {
         mSetFlagsRule.enableFlags(FLAG_ENABLE_CUSTOM_REBOOT_TIME_CONFIGURATIONS);
-        when(mContext.createPackageContext("com.android.server.deviceconfig.resources", 0))
+        ServiceResourcesHelper.setInstanceForTest(mResourcesHelper);
+        when(mResourcesHelper.getResourcesPackageName())
+                .thenReturn(Optional.of(TEST_RESOURCES_PACKAGE_NAME));
+        when(mContext.createPackageContext(TEST_RESOURCES_PACKAGE_NAME, 0))
                 .thenReturn(mContext);
         when(mContext.getResources()).thenReturn(mResources);
     }
