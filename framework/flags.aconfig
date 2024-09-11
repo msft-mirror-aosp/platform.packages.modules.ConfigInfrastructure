@@ -6,5 +6,6 @@ flag {
   namespace: "core_experiments_team_internal"
   description: "API flag for stageFlagsForBuild"
   bug: "360384952"
+  is_fixed_read_only: true
   is_exported: true
 }
