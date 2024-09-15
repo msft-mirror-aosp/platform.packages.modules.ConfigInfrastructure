@@ -6,10 +6,12 @@ import static com.android.server.deviceconfig.Flags.FLAG_ENABLE_CUSTOM_REBOOT_TI
 import static com.android.server.deviceconfig.Flags.FLAG_ENABLE_SIM_PIN_REPLAY;
 
 import static com.android.server.deviceconfig.UnattendedRebootManager.ACTION_RESUME_ON_REBOOT_LSKF_CAPTURED;
+import static com.android.server.deviceconfig.UnattendedRebootManager.ACTION_TRIGGER_PREPARATION_FALLBACK;
 import static com.android.server.deviceconfig.UnattendedRebootManager.ACTION_TRIGGER_REBOOT;
 import static com.google.common.truth.Truth.assertThat;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assume.assumeTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
@@ -46,6 +48,8 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 
+import com.android.modules.utils.build.SdkLevel;
+
 @SmallTest
 public class UnattendedRebootManagerTest {
 
@@ -60,7 +64,7 @@ public class UnattendedRebootManagerTest {
   private static final long RESCHEDULED_REBOOT_TIME = 1696583520000L; // 2023-10-06T02:12:00
   private static final long OUTSIDE_WINDOW_REBOOT_TIME = 1696587000000L; // 2023-10-06T03:10:00
   private static final long RESCHEDULED_OUTSIDE_WINDOW_REBOOT_TIME =
-          1696669920000L; // 2023-10-07T02:12:00
+      1696669920000L; // 2023-10-07T02:12:00
   private static final long ELAPSED_REALTIME_1_DAY = 86400000L;
 
   private final List<BroadcastReceiverRegistration> mRegisteredReceivers = new ArrayList<>();
@@ -74,12 +78,12 @@ public class UnattendedRebootManagerTest {
   private UnattendedRebootManager mRebootManager;
   private SimPinReplayManager mSimPinReplayManager;
 
-  @Rule
-  public final SetFlagsRule mSetFlagsRule = new SetFlagsRule();
-
+  @Rule public final SetFlagsRule mSetFlagsRule = new SetFlagsRule();
 
   @Before
   public void setUp() throws Exception {
+    assumeTrue(SdkLevel.isAtLeastV());
+
     mSetFlagsRule.enableFlags(
         FLAG_ENABLE_SIM_PIN_REPLAY, FLAG_ENABLE_CHARGER_DEPENDENCY_FOR_REBOOT);
 
@@ -130,6 +134,16 @@ public class UnattendedRebootManagerTest {
         new IntentFilter(ACTION_TRIGGER_REBOOT),
         Context.RECEIVER_EXPORTED);
 
+    mContext.registerReceiver(
+        new BroadcastReceiver() {
+          @Override
+          public void onReceive(Context context, Intent intent) {
+            mRebootManager.prepareUnattendedReboot();
+          }
+        },
+        new IntentFilter(ACTION_TRIGGER_PREPARATION_FALLBACK),
+        Context.RECEIVER_EXPORTED);
+
     mFakeInjector.setElapsedRealtime(ELAPSED_REALTIME_1_DAY);
 
     mFakeInjector.setRequiresChargingForReboot(true);
@@ -137,7 +151,22 @@ public class UnattendedRebootManagerTest {
   }
 
   @Test
+  public void maybePrepareUnattendedReboot() {
+    assumeTrue(SdkLevel.isAtLeastV());
+
+    // After normal flow
+    Log.i(TAG, "maybePrepareUnattendedReboot");
+    when(mKeyguardManager.isDeviceSecure()).thenReturn(true);
+
+    mRebootManager.maybePrepareUnattendedReboot();
+
+    assertTrue(mFakeInjector.isPreparedForUnattendedUpdate(mContext));
+  }
+
+  @Test
   public void scheduleReboot() {
+    assumeTrue(SdkLevel.isAtLeastV());
+
     Log.i(TAG, "scheduleReboot");
     when(mKeyguardManager.isDeviceSecure()).thenReturn(true);
     when(mConnectivityManager.getNetworkCapabilities(any()))
@@ -158,6 +187,8 @@ public class UnattendedRebootManagerTest {
 
   @Test
   public void scheduleReboot_requiresCharging_notCharging() {
+    assumeTrue(SdkLevel.isAtLeastV());
+
     Log.i(TAG, "scheduleReboot_requiresCharging_notCharging");
     when(mKeyguardManager.isDeviceSecure()).thenReturn(true);
     when(mConnectivityManager.getNetworkCapabilities(any()))
@@ -182,7 +213,8 @@ public class UnattendedRebootManagerTest {
         getRegistrationsForAction(BatteryManager.ACTION_CHARGING);
     assertThat(chargingStateReceiverRegistrations).hasSize(1);
 
-    // Now mimic a change in a charging state changed, and verify that we do the reboot once device
+    // Now mimic a change in a charging state changed, and verify that we do the reboot once
+    // device
     // is charging.
     when(mBatterManager.isCharging()).thenReturn(true);
     BroadcastReceiver chargingStateReceiver = chargingStateReceiverRegistrations.get(0).mReceiver;
@@ -193,6 +225,7 @@ public class UnattendedRebootManagerTest {
 
   @Test
   public void scheduleReboot_doesNotRequireCharging_notCharging() {
+    assumeTrue(SdkLevel.isAtLeastV());
     Log.i(TAG, "scheduleReboot_doesNotRequireCharging_notCharging");
     when(mKeyguardManager.isDeviceSecure()).thenReturn(true);
     when(mConnectivityManager.getNetworkCapabilities(any()))
@@ -219,6 +252,7 @@ public class UnattendedRebootManagerTest {
 
   @Test
   public void scheduleReboot_requiresCharging_flagNotEnabled() {
+    assumeTrue(SdkLevel.isAtLeastV());
     Log.i(TAG, "scheduleReboot_requiresCharging_flagNotEnabled");
     when(mKeyguardManager.isDeviceSecure()).thenReturn(true);
     when(mConnectivityManager.getNetworkCapabilities(any()))
@@ -245,6 +279,7 @@ public class UnattendedRebootManagerTest {
 
   @Test
   public void scheduleReboot_noPinLock() {
+    assumeTrue(SdkLevel.isAtLeastV());
     Log.i(TAG, "scheduleReboot_noPinLock");
     when(mKeyguardManager.isDeviceSecure()).thenReturn(false);
     when(mConnectivityManager.getNetworkCapabilities(any()))
@@ -265,6 +300,7 @@ public class UnattendedRebootManagerTest {
 
   @Test
   public void scheduleReboot_noPreparation() {
+    assumeTrue(SdkLevel.isAtLeastV());
     Log.i(TAG, "scheduleReboot_noPreparation");
     when(mKeyguardManager.isDeviceSecure()).thenReturn(true);
     when(mConnectivityManager.getNetworkCapabilities(any()))
@@ -284,6 +320,7 @@ public class UnattendedRebootManagerTest {
 
   @Test
   public void scheduleReboot_simPinPreparationFailed() {
+    assumeTrue(SdkLevel.isAtLeastV());
     Log.i(TAG, "scheduleReboot");
     when(mKeyguardManager.isDeviceSecure()).thenReturn(true);
     when(mConnectivityManager.getNetworkCapabilities(any()))
@@ -304,6 +341,7 @@ public class UnattendedRebootManagerTest {
 
   @Test
   public void scheduleReboot_noInternet() {
+    assumeTrue(SdkLevel.isAtLeastV());
     Log.i(TAG, "scheduleReboot_noInternet");
     when(mKeyguardManager.isDeviceSecure()).thenReturn(true);
     when(mConnectivityManager.getNetworkCapabilities(any())).thenReturn(new NetworkCapabilities());
@@ -320,6 +358,7 @@ public class UnattendedRebootManagerTest {
 
   @Test
   public void scheduleReboot_noInternetValidation() {
+    assumeTrue(SdkLevel.isAtLeastV());
     Log.i(TAG, "scheduleReboot_noInternetValidation");
     when(mKeyguardManager.isDeviceSecure()).thenReturn(true);
     when(mConnectivityManager.getNetworkCapabilities(any()))
@@ -340,15 +379,18 @@ public class UnattendedRebootManagerTest {
 
   @Test
   public void scheduleReboot_elapsedRealtimeLessThanFrequency_withDefaultTimeConfigurations() {
+    assumeTrue(SdkLevel.isAtLeastV());
     scheduleReboot_elapsedRealtimeLessThanFrequency(/* enableCustomTimeConfig= */ false);
   }
 
   @Test
   public void scheduleReboot_elapsedRealtimeLessThanFrequency_withCustomTimeConfigurations() {
+    assumeTrue(SdkLevel.isAtLeastV());
     scheduleReboot_elapsedRealtimeLessThanFrequency(/* enableCustomTimeConfig= */ true);
   }
 
   private void scheduleReboot_elapsedRealtimeLessThanFrequency(boolean enableCustomTimeConfig) {
+    assumeTrue(SdkLevel.isAtLeastV());
     if (enableCustomTimeConfig) {
       mSetFlagsRule.enableFlags(FLAG_ENABLE_CUSTOM_REBOOT_TIME_CONFIGURATIONS);
     } else {
@@ -375,15 +417,18 @@ public class UnattendedRebootManagerTest {
 
   @Test
   public void tryRebootOrSchedule_outsideRebootWindow_withDefaultTimeConfigurations() {
+    assumeTrue(SdkLevel.isAtLeastV());
     tryRebootOrSchedule_outsideRebootWindow(/* enableCustomTimeConfig= */ false);
   }
 
   @Test
   public void tryRebootOrSchedule_outsideRebootWindow_withCustomTimeConfigurations() {
+    assumeTrue(SdkLevel.isAtLeastV());
     tryRebootOrSchedule_outsideRebootWindow(/* enableCustomTimeConfig= */ true);
   }
 
   private void tryRebootOrSchedule_outsideRebootWindow(boolean enableCustomTimeConfig) {
+    assumeTrue(SdkLevel.isAtLeastV());
     if (enableCustomTimeConfig) {
       mSetFlagsRule.enableFlags(FLAG_ENABLE_CUSTOM_REBOOT_TIME_CONFIGURATIONS);
     }
@@ -464,23 +509,38 @@ public class UnattendedRebootManagerTest {
 
     @Override
     public void setRebootAlarm(Context context, long rebootTimeMillis) {
-      // To prevent infinite loop, do not simulate another reboot if reboot was already scheduled.
+      // To prevent infinite loop, do not simulate another reboot if reboot was already
+      // scheduled.
       if (scheduledReboot) {
+        actualRebootTime = rebootTimeMillis;
         actualRebootTime = rebootTimeMillis;
         return;
       }
       // Advance now to reboot time and reboot immediately.
       scheduledReboot = true;
       actualRebootTime = rebootTimeMillis;
-      setNow(rebootTimeMillis);
+      triggerAlarmImmediately(context, rebootTimeMillis, ACTION_TRIGGER_REBOOT);
+    }
+
+    private void triggerAlarmImmediately(Context context, long time, String intent) {
+      setNow(time);
 
       LatchingBroadcastReceiver rebootReceiver = new LatchingBroadcastReceiver();
 
       // Wait for reboot broadcast to be sent.
-      context.sendOrderedBroadcast(
-          new Intent(ACTION_TRIGGER_REBOOT), null, rebootReceiver, null, 0, null, null);
+      context.sendOrderedBroadcast(new Intent(intent), null, rebootReceiver, null, 0, null, null);
 
       rebootReceiver.await(20, TimeUnit.SECONDS);
+    }
+
+    @Override
+    public void setPrepareForUnattendedRebootFallbackAlarm(Context context, long delayMillis) {
+      triggerAlarmImmediately(context, delayMillis, ACTION_TRIGGER_PREPARATION_FALLBACK);
+    }
+
+    @Override
+    public void cancelPrepareForUnattendedRebootFallbackAlarm(Context context) {
+      /*no op */
     }
 
     @Override
@@ -564,8 +624,7 @@ public class UnattendedRebootManagerTest {
   }
 
   private List<BroadcastReceiverRegistration> getRegistrationsForAction(String action) {
-    return mRegisteredReceivers
-        .stream()
+    return mRegisteredReceivers.stream()
         .filter(r -> r.mFilter.hasAction(action))
         .collect(Collectors.toList());
   }

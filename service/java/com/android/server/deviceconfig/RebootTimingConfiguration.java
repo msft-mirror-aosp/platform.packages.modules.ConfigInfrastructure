@@ -18,10 +18,10 @@ package com.android.server.deviceconfig;
 
 import static com.android.server.deviceconfig.Flags.enableCustomRebootTimeConfigurations;
 
-import android.annotation.Nullable;
 import android.content.Context;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.res.Resources;
+import android.util.Log;
 import android.util.Pair;
 
 import com.android.internal.annotations.VisibleForTesting;
@@ -35,6 +35,8 @@ import java.util.Optional;
  * @hide
  */
 public class RebootTimingConfiguration {
+    private static final String TAG = "RebootTimingConfiguration";
+
     private static final String RESOURCES_PACKAGE =
         "com.android.server.deviceconfig.resources";
 
@@ -53,12 +55,17 @@ public class RebootTimingConfiguration {
 
     public RebootTimingConfiguration(Context context) {
         if (enableCustomRebootTimeConfigurations()) {
-            Context resourcesContext = getResourcesContext(context);
-            if (resourcesContext != null) {
-                Resources res = resourcesContext.getResources();
+            Optional<Context> resourcesContext = getResourcesContext(context);
+            if (resourcesContext.isPresent()) {
+                Resources res = resourcesContext.get().getResources();
                 mRebootWindowStartEndHour = getRebootWindowStartEndHour(res);
                 mRebootFrequencyDays = getRebootFrequencyDays(res);
+                Log.d(TAG,
+                        "reboot start/end hour: " + mRebootWindowStartEndHour
+                        + "; frequency-days: " + mRebootFrequencyDays);
                 return;
+            } else {
+                Log.d(TAG, "Unable to get resources context");
             }
         }
 
@@ -155,12 +162,17 @@ public class RebootTimingConfiguration {
         return day > 0;
     }
 
-    @Nullable
-    private static Context getResourcesContext(Context context) {
-        try {
-            return context.createPackageContext(RESOURCES_PACKAGE, 0);
-        } catch (NameNotFoundException e) {
-            return null;
+    private static Optional<Context> getResourcesContext(Context context) {
+        ServiceResourcesHelper resourcesHelper = ServiceResourcesHelper.get(context);
+        Optional<String> resourcesPackageName = resourcesHelper.getResourcesPackageName();
+        if (resourcesPackageName.isPresent()) {
+            try {
+                return Optional.ofNullable(
+                        context.createPackageContext(resourcesPackageName.get(), 0));
+            } catch (NameNotFoundException e) {
+                Log.e(TAG, "Error in creating resources package context.", e);
+            }
         }
+        return Optional.empty();
     }
 }
