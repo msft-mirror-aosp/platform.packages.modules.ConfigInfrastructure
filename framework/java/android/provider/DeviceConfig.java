@@ -34,11 +34,18 @@ import android.annotation.SystemApi;
 import android.content.ContentResolver;
 import android.database.ContentObserver;
 import android.net.Uri;
+import android.os.Binder;
+import android.os.IBinder;
+import android.os.ParcelFileDescriptor;
+import android.provider.DeviceConfigServiceManager;
+import android.provider.DeviceConfigInitializer;
+import android.provider.aidl.IDeviceConfigManager;
 import android.provider.flags.Flags;
 import android.util.ArrayMap;
 import android.util.ArraySet;
 import android.util.Log;
 import android.util.Pair;
+import android.util.Slog;
 
 import com.android.internal.annotations.GuardedBy;
 import com.android.modules.utils.build.SdkLevel;
@@ -62,15 +69,6 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.Executor;
-
-import android.util.Log;
-
-import android.provider.aidl.IDeviceConfigManager;
-import android.provider.DeviceConfigServiceManager;
-import android.provider.DeviceConfigInitializer;
-import android.os.Binder;
-import android.os.IBinder;
-import android.os.ParcelFileDescriptor;
 
 /**
  * Device level configuration parameters which can be tuned by a separate configuration service.
@@ -1033,6 +1031,20 @@ public final class DeviceConfig {
     @SystemApi
     public static final int SYNC_DISABLED_MODE_UNTIL_REBOOT = 2;
 
+
+    // NOTE: this API is only used by the framework code, but using MODULE_LIBRARIES causes a
+    // build-time error on CtsDeviceConfigTestCases, so it's using PRIVILEGED_APPS.
+    /**
+     * Optional argument to {@link #dump(ParcelFileDescriptor, PrintWriter, String, String[])} to
+     * indicate that the next argument is a namespace. How {@code dump()} will handle that
+     * argument is documented there.
+     *
+     * @hide
+     */
+    @SystemApi(client = SystemApi.Client.PRIVILEGED_APPS)
+    @FlaggedApi(Flags.FLAG_DUMP_IMPROVEMENTS)
+    public static final String DUMP_ARG_NAMESPACE = "--namespace";
+
     private static final Object sLock = new Object();
     @GuardedBy("sLock")
     private static ArrayMap<OnPropertiesChangedListener, Pair<String, Executor>> sListeners =
@@ -1040,6 +1052,7 @@ public final class DeviceConfig {
     @GuardedBy("sLock")
     private static Map<String, Pair<ContentObserver, Integer>> sNamespaces = new HashMap<>();
     private static final String TAG = "DeviceConfig";
+    private static final boolean DEBUG = Log.isLoggable(TAG, Log.DEBUG);
 
     private static final DeviceConfigDataStore sDataStore = new SettingsConfigDataStore();
 
@@ -1242,7 +1255,7 @@ public final class DeviceConfig {
         try {
             return Integer.parseInt(value);
         } catch (NumberFormatException e) {
-            Log.e(TAG, "Parsing integer failed for " + namespace + ":" + name);
+            Slog.e(TAG, "Parsing integer failed for " + namespace + ":" + name);
             return defaultValue;
         }
     }
@@ -1267,7 +1280,7 @@ public final class DeviceConfig {
         try {
             return Long.parseLong(value);
         } catch (NumberFormatException e) {
-            Log.e(TAG, "Parsing long failed for " + namespace + ":" + name);
+            Slog.e(TAG, "Parsing long failed for " + namespace + ":" + name);
             return defaultValue;
         }
     }
@@ -1293,7 +1306,7 @@ public final class DeviceConfig {
         try {
             return Float.parseFloat(value);
         } catch (NumberFormatException e) {
-            Log.e(TAG, "Parsing float failed for " + namespace + ":" + name);
+            Slog.e(TAG, "Parsing float failed for " + namespace + ":" + name);
             return defaultValue;
         }
     }
@@ -1535,10 +1548,17 @@ public final class DeviceConfig {
         }
     }
 
+    // TODO(b/367787970): cannot use reference to DUMP_ARG_NAMESPACE in the javadoc below, hence the
+    // usage of {@code --namespace}
     // NOTE: this API is only used by the framework code, but using MODULE_LIBRARIES causes a
     // build-time error on CtsDeviceConfigTestCases, so it's using PRIVILEGED_APPS.
     /**
      * Dumps internal state into the given {@code fd} or {@code pw}.
+     *
+     * <p><b>Note:</b> Currently the only supported argument is {@code --namespace}, which will
+     * filter the output using a substring of the next argument. But other arguments might be
+     * dynamically added in the future, without documentation - this method is meant only for
+     * debugging purposes, and should not be used as a formal API.
      *
      * @param fd file descriptor that will output the dump state. Typically used for binary dumps.
      * @param pw print writer that will output the dump state. Typically used for formatted text.
@@ -1552,16 +1572,40 @@ public final class DeviceConfig {
     @RequiresPermission(DUMP)
     public static void dump(@NonNull ParcelFileDescriptor fd, @NonNull PrintWriter pw,
             @NonNull String dumpPrefix, @Nullable String[] args) {
+        if (DEBUG) {
+            Slog.d(TAG, "dump(): args=" + Arrays.toString(args));
+        }
         Comparator<OnPropertiesChangedListener> comparator = (o1, o2) -> o1.toString()
                 .compareTo(o2.toString());
         TreeMap<String, Set<OnPropertiesChangedListener>> listenersByNamespace  =
                 new TreeMap<>();
         ArraySet<OnPropertiesChangedListener> uniqueListeners = new ArraySet<>();
+        String filter = null;
+        if (args.length > 0) {
+            switch (args[0]) {
+                case DUMP_ARG_NAMESPACE:
+                    if (args.length < 2) {
+                        throw new IllegalArgumentException(
+                                "argument " + DUMP_ARG_NAMESPACE + " requires an extra argument");
+                    }
+                    filter = args[1];
+                    if (DEBUG) {
+                        Slog.d(TAG, "dump(): setting filter as " + filter);
+                    }
+                    break;
+                default:
+                    Slog.w(TAG, "dump(): ignoring invalid arguments: " + Arrays.toString(args));
+                    break;
+            }
+        }
         int listenersSize;
         synchronized (sLock) {
             listenersSize = sListeners.size();
             for (int i = 0; i < listenersSize; i++) {
                 var namespace = sListeners.valueAt(i).first;
+                if (filter != null && !namespace.contains(filter)) {
+                    continue;
+                }
                 var listener = sListeners.keyAt(i);
                 var listeners = listenersByNamespace.get(namespace);
                 if (listeners == null) {
@@ -1702,7 +1746,7 @@ public final class DeviceConfig {
                 properties = getProperties(namespace, keys);
             } catch (SecurityException e) {
                 // Silently failing to not crash binder or listener threads.
-                Log.e(TAG, "OnPropertyChangedListener update failed: permission violation.");
+                Slog.e(TAG, "OnPropertyChangedListener update failed: permission violation.");
                 return;
             }
 
@@ -1881,7 +1925,7 @@ public final class DeviceConfig {
             try {
                 return Integer.parseInt(value);
             } catch (NumberFormatException e) {
-                Log.e(TAG, "Parsing int failed for " + name);
+                Slog.e(TAG, "Parsing int failed for " + name);
                 return defaultValue;
             }
         }
@@ -1903,7 +1947,7 @@ public final class DeviceConfig {
             try {
                 return Long.parseLong(value);
             } catch (NumberFormatException e) {
-                Log.e(TAG, "Parsing long failed for " + name);
+                Slog.e(TAG, "Parsing long failed for " + name);
                 return defaultValue;
             }
         }
@@ -1925,7 +1969,7 @@ public final class DeviceConfig {
             try {
                 return Float.parseFloat(value);
             } catch (NumberFormatException e) {
-                Log.e(TAG, "Parsing float failed for " + name);
+                Slog.e(TAG, "Parsing float failed for " + name);
                 return defaultValue;
             }
         }
