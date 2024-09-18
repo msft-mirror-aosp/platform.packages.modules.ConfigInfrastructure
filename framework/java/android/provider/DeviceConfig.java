@@ -20,9 +20,11 @@ import static android.Manifest.permission.WRITE_ALLOWLISTED_DEVICE_CONFIG;
 import static android.Manifest.permission.READ_DEVICE_CONFIG;
 import static android.Manifest.permission.WRITE_DEVICE_CONFIG;
 import static android.Manifest.permission.READ_WRITE_SYNC_DISABLED_MODE_CONFIG;
+import static android.Manifest.permission.DUMP;
 
 import android.Manifest;
 import android.annotation.CallbackExecutor;
+import android.annotation.FlaggedApi;
 import android.annotation.IntDef;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
@@ -32,13 +34,17 @@ import android.annotation.SystemApi;
 import android.content.ContentResolver;
 import android.database.ContentObserver;
 import android.net.Uri;
-import com.android.modules.utils.build.SdkLevel;
+import android.provider.flags.Flags;
 import android.util.ArrayMap;
+import android.util.ArraySet;
 import android.util.Log;
 import android.util.Pair;
 
 import com.android.internal.annotations.GuardedBy;
+import com.android.modules.utils.build.SdkLevel;
 
+import java.io.FileDescriptor;
+import java.io.PrintWriter;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -46,12 +52,15 @@ import java.lang.annotation.Target;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.concurrent.Executor;
 
 import android.util.Log;
@@ -59,7 +68,9 @@ import android.util.Log;
 import android.provider.aidl.IDeviceConfigManager;
 import android.provider.DeviceConfigServiceManager;
 import android.provider.DeviceConfigInitializer;
+import android.os.Binder;
 import android.os.IBinder;
+import android.os.ParcelFileDescriptor;
 
 /**
  * Device level configuration parameters which can be tuned by a separate configuration service.
@@ -1021,7 +1032,7 @@ public final class DeviceConfig {
      */
     @SystemApi
     public static final int SYNC_DISABLED_MODE_UNTIL_REBOOT = 2;
-    
+
     private static final Object sLock = new Object();
     @GuardedBy("sLock")
     private static ArrayMap<OnPropertiesChangedListener, Pair<String, Executor>> sListeners =
@@ -1520,6 +1531,56 @@ public final class DeviceConfig {
                 decrementNamespace(sListeners.get(onPropertiesChangedListener).first);
                 sListeners.put(onPropertiesChangedListener, new Pair<>(namespace, executor));
                 incrementNamespace(namespace);
+            }
+        }
+    }
+
+    // NOTE: this API is only used by the framework code, but using MODULE_LIBRARIES causes a
+    // build-time error on CtsDeviceConfigTestCases, so it's using PRIVILEGED_APPS.
+    /**
+     * Dumps internal state into the given {@code fd} or {@code pw}.
+     *
+     * @param fd file descriptor that will output the dump state. Typically used for binary dumps.
+     * @param pw print writer that will output the dump state. Typically used for formatted text.
+     * @param prefix prefix added to each line
+     * @param args (optional) arguments passed by {@code dumpsys}.
+     *
+     * @hide
+     */
+    @SystemApi(client = SystemApi.Client.PRIVILEGED_APPS)
+    @FlaggedApi(Flags.FLAG_DUMP_IMPROVEMENTS)
+    @RequiresPermission(DUMP)
+    public static void dump(@NonNull ParcelFileDescriptor fd, @NonNull PrintWriter pw,
+            @NonNull String dumpPrefix, @Nullable String[] args) {
+        Comparator<OnPropertiesChangedListener> comparator = (o1, o2) -> o1.toString()
+                .compareTo(o2.toString());
+        TreeMap<String, Set<OnPropertiesChangedListener>> listenersByNamespace  =
+                new TreeMap<>();
+        ArraySet<OnPropertiesChangedListener> uniqueListeners = new ArraySet<>();
+        int listenersSize;
+        synchronized (sLock) {
+            listenersSize = sListeners.size();
+            for (int i = 0; i < listenersSize; i++) {
+                var namespace = sListeners.valueAt(i).first;
+                var listener = sListeners.keyAt(i);
+                var listeners = listenersByNamespace.get(namespace);
+                if (listeners == null) {
+                    // Life would be so much easier if Android provided a MultiMap implementation...
+                    listeners = new TreeSet<>(comparator);
+                    listenersByNamespace.put(namespace, listeners);
+                }
+                listeners.add(listener);
+                uniqueListeners.add(listener);
+            }
+        }
+        pw.printf("%s%d listeners for %d namespaces:\n", dumpPrefix, uniqueListeners.size(),
+                listenersByNamespace.size());
+        for (var entry : listenersByNamespace.entrySet()) {
+            var namespace = entry.getKey();
+            var listeners = entry.getValue();
+            pw.printf("%s%s: %d listeners\n", dumpPrefix, namespace, listeners.size());
+            for (var listener : listeners) {
+                pw.printf("%s%s%s\n", dumpPrefix, dumpPrefix, listener);
             }
         }
     }
