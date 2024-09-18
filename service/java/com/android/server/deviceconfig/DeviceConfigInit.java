@@ -2,6 +2,7 @@ package com.android.server.deviceconfig;
 
 import static com.android.server.deviceconfig.Flags.enableRebootNotification;
 import static com.android.server.deviceconfig.Flags.enableUnattendedReboot;
+import static com.android.server.deviceconfig.Flags.useDescriptiveLogMessage;
 
 import java.io.IOException;
 import java.io.FileDescriptor;
@@ -79,7 +80,12 @@ public class DeviceConfigInit {
             for (String flagName : overrideProperties.getKeyset()) {
                 String fullName = overrideProperties.getNamespace() + "/" + flagName;
                 String value = overrideProperties.getString(flagName, null);
-                Slog.i(TAG, "DeviceConfig sticky override is set: " + fullName + "=" + value);
+                if (useDescriptiveLogMessage()) {
+                    Slog.i(TAG, "DeviceConfig sticky local override is set: "
+                        + fullName + "=" + value);
+                } else {
+                    Slog.i(TAG, "DeviceConfig sticky override is set: " + fullName + "=" + value);
+                }
             }
 
             boolean notificationEnabled =
