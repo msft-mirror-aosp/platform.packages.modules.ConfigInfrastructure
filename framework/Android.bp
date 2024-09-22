@@ -65,6 +65,7 @@ java_aconfig_library {
     min_sdk_version: "34",
     apex_available: [
         "com.android.configinfrastructure",
+        "//apex_available:platform", // Used by DeviceConfigService
     ],
     visibility: [
         "//visibility:public",
