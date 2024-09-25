@@ -40,7 +40,6 @@ bootclasspath_fragment {
         // classes into an API surface, e.g. public, system, etc.. Doing so will
         // result in a build failure due to inconsistent flags.
         package_prefixes: [
-            "android.internal.configinfra",
             "android.provider.aidl",
             "android.provider.flags",
             "android.provider.internal.aconfig.storage",
