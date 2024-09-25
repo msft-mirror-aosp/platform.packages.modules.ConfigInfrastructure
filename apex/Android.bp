@@ -42,6 +42,7 @@ bootclasspath_fragment {
         package_prefixes: [
             "android.provider.aidl",
             "android.provider.flags",
+            "android.provider.internal.aconfig.storage",
             "android.provider.internal.modules.utils.build",
         ],
     },
