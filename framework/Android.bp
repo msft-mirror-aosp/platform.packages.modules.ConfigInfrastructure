@@ -24,6 +24,7 @@ java_sdk_library {
     ],
     defaults: ["framework-module-defaults"],
     permitted_packages: [
+        "android.internal.configinfra",
         "android.provider",
         "android.provider.flags",
         "android.provider.aidl",
@@ -36,11 +37,11 @@ java_sdk_library {
     impl_library_visibility: [
         "//packages/modules/ConfigInfrastructure:__subpackages__",
     ],
-    libs: [
-        "configinfra_framework_flags_java_lib",
-    ],
     static_libs: [
+        "aconfigd_java_proto_lite_lib",
+        "configinfra_framework_flags_java_lib",
         "modules-utils-build",
+        "aconfig_storage_file_java",
     ],
     aconfig_declarations: [
         "configinfra_framework_flags",
