@@ -141,6 +141,10 @@ package android.provider {
     method @NonNull public android.provider.DeviceConfig.Properties.Builder setString(@NonNull String, @Nullable String);
   }
 
+  @FlaggedApi("android.provider.flags.stage_flags_for_build") public final class StageOtaFlags {
+    method @FlaggedApi("android.provider.flags.stage_flags_for_build") public static void stageBooleanAconfigFlagsForBuild(@NonNull java.util.Map<java.lang.String,java.lang.Boolean>, @NonNull String);
+  }
+
   public final class UpdatableDeviceConfigServiceReadiness {
     method public static boolean shouldStartUpdatableService();
   }
