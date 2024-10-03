@@ -14,20 +14,19 @@
  * limitations under the License.
  */
 
-#include <android-base/logging.h>
-#include "aconfigd.h"
+use aconfigd_mainline::AconfigdError;
 
-int main(int argc, char** argv) {
-  android::base::InitLogging(argv, &android::base::KernelLogger);
-  if (argc == 1) {
-    return android::aconfigd::aconfigd_mainline_start_socket();
-  } else if (argc == 2 && strcmp(argv[1], "--bootstrap_init") == 0) {
-    return android::aconfigd::aconfigd_mainline_bootstrap_init();
-  } else if (argc == 2 && strcmp(argv[1], "--init") == 0) {
-    return android::aconfigd::aconfigd_mainline_init();
-  } else {
-    LOG(ERROR) << "invalid aconfigd_mainline command";
-    return 1;
-  }
-  return 0;
+/// start aconfigd socket service
+pub fn start_socket() -> Result<(), AconfigdError> {
+    Ok(())
+}
+
+/// initialize mainline module storage files
+pub fn init() -> Result<(), AconfigdError> {
+    Ok(())
+}
+
+/// initialize bootstrapped mainline module storage files
+pub fn bootstrap_init() -> Result<(), AconfigdError> {
+    Ok(())
 }
