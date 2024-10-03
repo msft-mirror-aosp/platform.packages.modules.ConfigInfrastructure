@@ -1,0 +1,21 @@
+[package]
+name = "aconfigd_mainline"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["cargo"]
+cargo = []
+
+[dependencies]
+anyhow = "1.0.69"
+protobuf = "3.2.0"
+thiserror = "1.0.56"
+clap = { version = "4.1.8", features = ["derive"] }
+
+[[bin]]
+name = "aconfigd-mainline"
+path = "src/main.rs"
+
+[build-dependencies]
+protobuf-codegen = "3.2.0"
