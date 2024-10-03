@@ -14,19 +14,13 @@
  * limitations under the License.
  */
 
-#pragma once
+//! `aconfig_mainline` is a crate that defines library functions that are needed by
+//! aconfig daemon for mainline (aconfigd-mainline binary).
 
-namespace android {
-namespace aconfigd {
-
-/// start aconfigd scoket
-int aconfigd_mainline_start_socket();
-
-/// initialize storage files for bootstraped apexes
-int aconfigd_mainline_bootstrap_init();
-
-/// initialize storage files for all apexes
-int aconfigd_mainline_init();
-
-} // namespace aconfigd
-} // namespace android
+/// aconfigd-mainline error
+#[non_exhaustive]
+#[derive(thiserror::Error, Debug)]
+pub enum AconfigdError {
+    #[error("invalid command")]
+    InvalidCommand(#[source] anyhow::Error),
+}
