@@ -18,7 +18,7 @@ syntax = "proto2";
 package android.aconfigd;
 option optimize_for = LITE_RUNTIME;
 
-message MainlinePersistStorageRecord {
+message PersistStorageRecord {
   optional uint32 version = 1;
   optional string container = 2;
   optional string package_map = 3;
@@ -28,8 +28,8 @@ message MainlinePersistStorageRecord {
   optional string flag_info = 7;
 }
 
-message MainlinePersistStorageRecords {
-  repeated MainlinePersistStorageRecord records = 1;
+message PersistStorageRecords {
+  repeated PersistStorageRecord records = 1;
 }
 
 message FlagOverride {
@@ -138,7 +138,8 @@ message StorageReturnMessage {
     optional bool has_server_override = 7;
     optional bool is_readwrite = 8;
     optional bool has_local_override = 9;
-    optional string container = 10;
+    optional bool has_boot_local_override = 10;
+    optional string container = 11;
   }
 
   message RemoveLocalOverrideReturnMessage {}
