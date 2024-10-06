@@ -12,53 +12,33 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-cc_library_static {
-    name: "libaconfigd_proto",
-    proto: {
-        export_proto_headers: true,
-        type: "lite",
-    },
-    srcs: ["aconfigd.proto"],
-    apex_available: ["com.android.configinfrastructure"],
-    min_sdk_version: "34",
-    visibility: ["//packages/modules/ConfigInfrastructure/aconfigd"],
-}
-
-cc_defaults {
-    name: "aconfigd_mainline_defaults",
-    shared_libs: [
-        "liblog",
+rust_defaults {
+    name: "aconfigd_mainline.defaults",
+    edition: "2021",
+    lints: "none",
+    rustlibs: [
+        "libanyhow",
+        "libthiserror",
+        "libclap",
     ],
-    stl: "libc++_static",
-    static_libs: [
-        "libaconfigd_proto",
-        "libprotobuf-cpp-lite",
-        "libbase",
-        "libcutils",
+    apex_available: [
+        "com.android.configinfrastructure",
     ],
     min_sdk_version: "34",
-    apex_available: ["com.android.configinfrastructure"],
 }
 
-cc_library {
+rust_library {
     name: "libaconfigd_mainline",
-    srcs: [
-        "src/aconfigd.cpp",
-    ],
-    defaults: [
-        "aconfigd_mainline_defaults",
-    ],
+    crate_name: "aconfigd_mainline",
+    defaults: ["aconfigd_mainline.defaults"],
+    srcs: ["src/lib.rs"],
 }
 
-cc_binary {
-    name: "aconfigd_mainline",
-    srcs: [
-        "src/aconfigd_main.cpp",
-    ],
-    static_libs: [
+rust_binary {
+    name: "aconfigd-mainline",
+    defaults: ["aconfigd_mainline.defaults"],
+    srcs: ["src/main.rs"],
+    rustlibs: [
         "libaconfigd_mainline",
-    ],
-    defaults: [
-        "aconfigd_mainline_defaults",
     ],
 }
