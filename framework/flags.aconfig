@@ -8,3 +8,12 @@ flag {
   bug: "360384952"
   is_exported: true
 }
+
+flag {
+  name: "new_storage_public_api"
+  namespace: "core_experiments_team_internal"
+  description: "API flag for accessing new storage"
+  bug: "367765164"
+  is_fixed_read_only: true
+  is_exported: true
+}
