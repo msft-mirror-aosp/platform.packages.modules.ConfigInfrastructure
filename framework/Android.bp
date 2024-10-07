@@ -24,7 +24,9 @@ java_sdk_library {
     ],
     defaults: ["framework-module-defaults"],
     permitted_packages: [
+        "android.internal.configinfra",
         "android.provider",
+        "android.provider.flags",
         "android.provider.aidl",
     ],
     apex_available: [
@@ -36,10 +38,42 @@ java_sdk_library {
         "//packages/modules/ConfigInfrastructure:__subpackages__",
     ],
     static_libs: [
+        "aconfigd_java_proto_lite_lib",
+        "configinfra_framework_flags_java_lib",
         "modules-utils-build",
+        "aconfig_storage_file_java",
+    ],
+    aconfig_declarations: [
+        "configinfra_framework_flags",
     ],
     jarjar_rules: "jarjar-rules.txt",
     lint: {
         baseline_filename: "lint-baseline.xml",
     },
+}
+
+aconfig_declarations {
+    name: "configinfra_framework_flags",
+    package: "android.provider.flags",
+    container: "com.android.configinfrastructure",
+    srcs: [
+        "flags.aconfig",
+    ],
+}
+
+java_aconfig_library {
+    name: "configinfra_framework_flags_java_lib",
+    min_sdk_version: "34",
+    apex_available: [
+        "com.android.configinfrastructure",
+        "//apex_available:platform", // Used by DeviceConfigService
+    ],
+    visibility: [
+        "//visibility:public",
+    ],
+    aconfig_declarations: "configinfra_framework_flags",
+    sdk_version: "core_platform",
+    libs: [
+        "fake_device_config",
+    ],
 }
