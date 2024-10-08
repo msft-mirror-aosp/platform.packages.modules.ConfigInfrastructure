@@ -143,7 +143,7 @@ package android.provider {
   }
 
   @FlaggedApi("android.provider.flags.stage_flags_for_build") public final class StageOtaFlags {
-    method @FlaggedApi("android.provider.flags.stage_flags_for_build") public static void stageBooleanAconfigFlagsForBuild(@NonNull java.util.Map<java.lang.String,java.lang.Boolean>, @NonNull String);
+    method @FlaggedApi("android.provider.flags.stage_flags_for_build") public static int stageBooleanAconfigFlagsForBuild(@NonNull java.util.Map<java.lang.String,java.lang.Boolean>, @NonNull String);
   }
 
   public final class UpdatableDeviceConfigServiceReadiness {

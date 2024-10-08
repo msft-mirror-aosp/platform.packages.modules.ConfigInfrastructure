@@ -19,6 +19,7 @@ import android.aconfigd.Aconfigd.FlagOverride;
 import android.aconfigd.Aconfigd.StorageRequestMessage;
 import android.aconfigd.Aconfigd.StorageRequestMessages;
 import android.aconfigd.Aconfigd.StorageReturnMessages;
+import android.annotation.IntDef;
 import android.annotation.FlaggedApi;
 import android.annotation.NonNull;
 import android.annotation.SystemApi;
@@ -30,9 +31,12 @@ import android.util.Log;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.File;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Map;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Retention;
 
 /** @hide */
 @SystemApi
@@ -40,6 +44,19 @@ import java.util.Map;
 public final class StageOtaFlags {
   private static String LOG_TAG = "StageOtaFlags";
   private static final String SOCKET_ADDRESS = "aconfigd";
+  private static final String STORAGE_MARKER_FILE_PATH
+        = "/metadata/aconfig/boot/enable_only_new_storage";
+
+  private static final int STATUS_STORAGE_NOT_ENABLED = -1;
+  private static final int STATUS_STAGE_SUCCESS = 0;
+
+  /** @hide */
+  @IntDef(prefix = { "STATUS_" }, value = {
+    STATUS_STORAGE_NOT_ENABLED,
+    STATUS_STAGE_SUCCESS,
+  })
+  @Retention(RetentionPolicy.SOURCE)
+  public @interface StageStatus {}
 
   private StageOtaFlags() {}
 
@@ -61,8 +78,23 @@ public final class StageOtaFlags {
    */
   @SystemApi
   @FlaggedApi(Flags.FLAG_STAGE_FLAGS_FOR_BUILD)
-  public static void stageBooleanAconfigFlagsForBuild(
+  @StageStatus
+  public static int stageBooleanAconfigFlagsForBuild(
       @NonNull Map<String, Boolean> flags, @NonNull String buildId) {
+
+    boolean storageMarkerFileExists = false;
+    try {
+      File file = new File(STORAGE_MARKER_FILE_PATH);
+      storageMarkerFileExists = file.exists();
+    } catch (Exception e) {
+      Log.i(LOG_TAG, "Failed to check if file exists: " + e);
+    }
+
+    if (!storageMarkerFileExists) {
+      Log.i(LOG_TAG, "Storage marker file does not exist");
+      return STATUS_STORAGE_NOT_ENABLED;
+    }
+
     int flagCount = flags.size();
     Log.d(LOG_TAG, "stageFlagsForBuild invoked for " + flagCount + " flags");
 
@@ -83,6 +115,8 @@ public final class StageOtaFlags {
     } catch (IOException e) {
       throw new AndroidRuntimeException(e);
     }
+
+    return STATUS_STAGE_SUCCESS;
   }
 
   private static void writeToSocket(
