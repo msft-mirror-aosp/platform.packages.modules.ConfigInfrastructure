@@ -33,6 +33,11 @@ import android.content.ContentResolver;
 import android.database.ContentObserver;
 import android.net.Uri;
 import com.android.modules.utils.build.SdkLevel;
+
+import android.ravenwood.annotation.RavenwoodKeepWholeClass;
+import android.ravenwood.annotation.RavenwoodRedirect;
+import android.ravenwood.annotation.RavenwoodRedirectionClass;
+import android.ravenwood.annotation.RavenwoodThrow;
 import android.util.ArrayMap;
 import android.util.Log;
 import android.util.Pair;
@@ -54,13 +59,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.Executor;
 
-import android.util.Log;
-
-import android.provider.aidl.IDeviceConfigManager;
-import android.provider.DeviceConfigServiceManager;
-import android.provider.DeviceConfigInitializer;
-import android.os.IBinder;
-
 /**
  * Device level configuration parameters which can be tuned by a separate configuration service.
  * Namespaces that end in "_native" such as {@link #NAMESPACE_NETD_NATIVE} are intended to be used
@@ -69,6 +67,8 @@ import android.os.IBinder;
  * @hide
  */
 @SystemApi
+@RavenwoodKeepWholeClass
+@RavenwoodRedirectionClass("DeviceConfig_host")
 public final class DeviceConfig {
 
     /**
@@ -1030,7 +1030,12 @@ public final class DeviceConfig {
     private static Map<String, Pair<ContentObserver, Integer>> sNamespaces = new HashMap<>();
     private static final String TAG = "DeviceConfig";
 
-    private static final DeviceConfigDataStore sDataStore = new SettingsConfigDataStore();
+    private static final DeviceConfigDataStore sDataStore = newDataStore();
+
+    @RavenwoodRedirect
+    private static DeviceConfigDataStore newDataStore() {
+        return new SettingsConfigDataStore();
+    }
 
     private static final String DEVICE_CONFIG_OVERRIDES_NAMESPACE =
             "device_config_overrides";
@@ -1452,6 +1457,7 @@ public final class DeviceConfig {
      * @see #setProperty(String, String, String, boolean)
      */
     @SystemApi
+    @RavenwoodThrow
     @RequiresPermission(anyOf = {WRITE_DEVICE_CONFIG, WRITE_ALLOWLISTED_DEVICE_CONFIG})
     public static void resetToDefaults(int resetMode, @Nullable String namespace) {
         sDataStore.resetToDefaults(resetMode, namespace);
@@ -1553,6 +1559,7 @@ public final class DeviceConfig {
      * @hide
      */
     @SystemApi
+    @RavenwoodThrow
     @RequiresPermission(Manifest.permission.MONITOR_DEVICE_CONFIG_ACCESS)
     public static void setMonitorCallback(
             @NonNull ContentResolver resolver,
@@ -1568,6 +1575,7 @@ public final class DeviceConfig {
      * @hide
      */
     @SystemApi
+    @RavenwoodThrow
     @RequiresPermission(Manifest.permission.MONITOR_DEVICE_CONFIG_ACCESS)
     public static void clearMonitorCallback(@NonNull ContentResolver resolver) {
         sDataStore.clearMonitorCallback(resolver);
@@ -1965,5 +1973,4 @@ public final class DeviceConfig {
             }
         }
     }
-
 }
