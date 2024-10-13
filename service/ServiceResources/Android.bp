@@ -33,4 +33,5 @@ android_app {
     apex_available: [
         "com.android.configinfrastructure",
     ],
+    updatable: true,
 }
