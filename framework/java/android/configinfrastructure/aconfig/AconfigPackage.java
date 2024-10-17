@@ -39,9 +39,9 @@ import java.nio.file.StandardOpenOption;
  * <p><strong>Note: this is intended only to be used by generated code. To determine if a given flag
  * is enabled in app code, the generated android flags should be used.</strong>
  *
- * <p>This class is used to read the flag from flag storage. It should be used only for reading the
- * exported flags. For each instance of this class, it will caches one package related information.
- * To read flag from different package, a new instance of this class should be {@link #load loaded}.
+ * <p>This class is used to read the flag from Aconfig Package.Each instance of this class will
+ * cache information related to one package. To read flags from a different package, a new instance
+ * of this class should be {@link #load loaded}.
  */
 @FlaggedApi(FLAG_NEW_STORAGE_PUBLIC_API)
 public class AconfigPackage {
@@ -74,9 +74,9 @@ public class AconfigPackage {
     /**
      * Get the value of a boolean flag.
      *
-     * <p>This method retrieves the value of a boolean flag within the Aconfig package. If the
-     * package is found in the Aconfig storage, it returns the actual flag value. Otherwise, it
-     * returns the provided defaultValue.
+     * <p>This method retrieves the value of a boolean flag within the Aconfig Package. If the
+     * instance is backed by a real Aconfig Package, and the flag is found in the Aconfig storage,
+     * it returns the actual flag value. Otherwise, it returns the provided defaultValue.
      *
      * @param flagName flag name of the given flag (without a package name prefix)
      * @param defaultValue default value if the flag is not found or the AconfigPackage instance is
