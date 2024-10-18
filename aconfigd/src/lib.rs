@@ -17,10 +17,30 @@
 //! `aconfig_mainline` is a crate that defines library functions that are needed by
 //! aconfig daemon for mainline (aconfigd-mainline binary).
 
+pub mod storage_files;
+
+#[cfg(test)]
+mod test_utils;
+
 /// aconfigd-mainline error
 #[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum AconfigdError {
     #[error("invalid command")]
     InvalidCommand(#[source] anyhow::Error),
+
+    #[error("fail to parse storage file")]
+    FailToParse(#[source] anyhow::Error),
+
+    #[error("fail to map storage file")]
+    FailToMap(#[source] anyhow::Error),
+
+    #[error("invalid flag value type")]
+    InvalidFlagValueType(#[source] anyhow::Error),
+
+    #[error("failed to modify file permission")]
+    FailToUpdateFilePerm(#[source] anyhow::Error),
+
+    #[error("failed to copy file")]
+    FailToCopyFile(#[source] anyhow::Error),
 }
