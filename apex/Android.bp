@@ -44,6 +44,8 @@ bootclasspath_fragment {
             "android.provider.flags",
             "android.provider.internal.aconfig.storage",
             "android.provider.internal.modules.utils.build",
+
+            "android.configinfrastructure.aconfig",
         ],
     },
     // The bootclasspath_fragments that provide APIs on which this depends.
