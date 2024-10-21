@@ -43,4 +43,10 @@ pub enum AconfigdError {
 
     #[error("failed to copy file")]
     FailToCopyFile(#[source] anyhow::Error),
+
+    #[error("flag does not exist")]
+    FlagDoesNotExist(#[source] anyhow::Error),
+
+    #[error("fail to override flag")]
+    FailToOverride(#[source] anyhow::Error),
 }

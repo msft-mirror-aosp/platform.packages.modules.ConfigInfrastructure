@@ -16,11 +16,12 @@ rust_defaults {
     name: "aconfigd_mainline.defaults",
     edition: "2021",
     lints: "none",
-    rlibs: [
+    rustlibs: [
         "libanyhow",
         "libthiserror",
         "libclap",
         "libmemmap2",
+        "libprotobuf",
         "libaconfigd_protos_rust",
         "libaconfig_storage_file",
         "libaconfig_storage_read_api",
