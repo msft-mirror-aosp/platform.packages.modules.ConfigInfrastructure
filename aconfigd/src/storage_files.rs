@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+use crate::utils::{copy_file, read_pb_from_file, set_file_permission, write_pb_to_file};
 use crate::AconfigdError;
 use aconfig_storage_file::{
     list_flags, list_flags_with_info, FlagInfoBit, FlagValueSummary, FlagValueType,
@@ -30,7 +31,6 @@ use aconfigd_protos::{ProtoFlagOverride, ProtoLocalFlagOverrides, ProtoPersistSt
 use anyhow::anyhow;
 use memmap2::{Mmap, MmapMut};
 use std::collections::HashMap;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 // In memory data structure for storage file locations for each container
@@ -116,73 +116,6 @@ pub(crate) struct FlagSnapshot {
     pub has_local_override: bool,
 }
 
-/// TODO: temp implementation to set file permission, to be replaced by util one
-pub fn set_file_permission(file: &Path, mode: u32) -> Result<(), AconfigdError> {
-    let perms = std::fs::Permissions::from_mode(mode);
-    std::fs::set_permissions(file, perms).map_err(|errmsg| {
-        AconfigdError::FailToUpdateFilePerm(anyhow!(
-            "Failed to set file permission to 0444 for {}: {}",
-            file.display(),
-            errmsg
-        ))
-    })?;
-    Ok(())
-}
-
-/// TODO: temp imlementation to copy file, to be replaced by util one
-pub fn copy_file(src: &Path, dst: &Path, mode: u32) -> Result<(), AconfigdError> {
-    std::fs::copy(src, dst).map_err(|errmsg| {
-        AconfigdError::FailToCopyFile(anyhow!(
-            "Failed to copy file from {} to {}: {}",
-            src.display(),
-            dst.display(),
-            errmsg
-        ))
-    })?;
-    set_file_permission(dst, mode)
-}
-
-/// TODO: temp implementation to read pb from file, to be replaced by util one
-pub fn read_pb_from_file<T: protobuf::Message>(file: &Path) -> Result<T, AconfigdError> {
-    if !Path::new(file).exists() {
-        return Ok(T::new());
-    }
-
-    let data = std::fs::read(file).map_err(|errmsg| {
-        AconfigdError::FailToParse(anyhow!(
-            "Failed to read file {} to buffer: {}",
-            file.display(),
-            errmsg
-        ))
-    })?;
-    protobuf::Message::parse_from_bytes(data.as_ref()).map_err(|errmsg| {
-        AconfigdError::FailToParse(anyhow!(
-            "Failed to read file {} to buffer: {}",
-            file.display(),
-            errmsg
-        ))
-    })
-}
-
-/// TODO: temp implementation to write pb to file, to be replaced by util one
-pub fn write_pb_to_file<T: protobuf::Message>(pb: &T, file: &Path) -> Result<(), AconfigdError> {
-    let bytes = protobuf::Message::write_to_bytes(pb).map_err(|errmsg| {
-        AconfigdError::FailToOverride(anyhow!(
-            "Fail to serialize protobuf to bytes while writing to {}: {}",
-            file.display(),
-            errmsg
-        ))
-    })?;
-    std::fs::write(&file, bytes).map_err(|errmsg| {
-        AconfigdError::FailToOverride(anyhow!(
-            "Fail to write protobuf bytes to file {}: {}",
-            file.display(),
-            errmsg
-        ))
-    })?;
-    Ok(())
-}
-
 impl StorageFiles {
     /// Constructor from a container
     pub fn from_container(
@@ -225,6 +158,9 @@ impl StorageFiles {
         copy_file(flag_map, &record.persist_flag_map, 0o444)?;
         copy_file(flag_val, &record.persist_flag_val, 0o644)?;
         copy_file(flag_info, &record.persist_flag_info, 0o644)?;
+
+        let pb = ProtoLocalFlagOverrides::new();
+        write_pb_to_file::<ProtoLocalFlagOverrides>(&pb, &record.local_overrides)?;
 
         let files = Self {
             storage_record: record,
@@ -391,7 +327,9 @@ impl StorageFiles {
     /// file not thru this memory mapped file or there are concurrent writes to this
     /// memory mapped file. Ensure all writes to the underlying file are thru this memory
     /// mapped file and there are no concurrent writes.
-    unsafe fn get_mutable_file_mapping(file_path: &Path) -> Result<MmapMut, AconfigdError> {
+    pub(crate) unsafe fn get_mutable_file_mapping(
+        file_path: &Path,
+    ) -> Result<MmapMut, AconfigdError> {
         // SAFETY: As per the safety comment, there are no other writes to the underlying file.
         unsafe {
             map_mutable_storage_file(&file_path.display().to_string()).map_err(|errmsg| {
@@ -697,7 +635,7 @@ impl StorageFiles {
     }
 
     /// Set flag has local override to file
-    fn set_flag_has_local_override_to_file(
+    pub fn set_flag_has_local_override_to_file(
         file: &mut MmapMut,
         context: &PackageFlagContext,
         value: bool,
@@ -774,22 +712,7 @@ impl StorageFiles {
             pb.overrides.push(new_entry);
         }
 
-        let bytes = protobuf::Message::write_to_bytes(&pb).map_err(|errmsg| {
-            AconfigdError::FailToOverride(anyhow!(
-                "Fail to set flag local override for {}.{}: {}",
-                context.package,
-                context.flag,
-                errmsg
-            ))
-        })?;
-        std::fs::write(&self.storage_record.local_overrides, bytes).map_err(|errmsg| {
-            AconfigdError::FailToOverride(anyhow!(
-                "Fail to set flag local override for {}.{}: {}",
-                context.package,
-                context.flag,
-                errmsg
-            ))
-        })?;
+        write_pb_to_file::<ProtoLocalFlagOverrides>(&pb, &self.storage_record.local_overrides)?;
 
         let flag_info_file = self.get_persist_flag_info()?;
         Self::set_flag_has_local_override_to_file(flag_info_file, context, true)?;
@@ -823,6 +746,13 @@ impl StorageFiles {
                 value_type: f.value_type,
             })
             .collect())
+    }
+
+    /// Get all local overrides
+    pub fn get_all_local_overrides(&mut self) -> Result<Vec<ProtoFlagOverride>, AconfigdError> {
+        let pb =
+            read_pb_from_file::<ProtoLocalFlagOverrides>(&self.storage_record.local_overrides)?;
+        Ok(pb.overrides)
     }
 
     /// Remove a local flag override
@@ -1171,25 +1101,8 @@ impl StorageFiles {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::{ContainerMock, StorageRootDirMock};
+    use crate::test_utils::{has_same_content, ContainerMock, StorageRootDirMock};
     use aconfig_storage_file::StoredFlagType;
-    use std::fs::File;
-    use std::io::Read;
-
-    fn has_same_content(file_one: &Path, file_two: &Path) -> bool {
-        assert!(file_one.exists());
-        assert!(file_two.exists());
-
-        let mut f1 = File::open(file_one).unwrap();
-        let mut b1 = Vec::new();
-        f1.read_to_end(&mut b1).unwrap();
-
-        let mut f2 = File::open(file_two).unwrap();
-        let mut b2 = Vec::new();
-        f2.read_to_end(&mut b2).unwrap();
-
-        b1 == b2
-    }
 
     fn create_mock_storage_files(
         container: &ContainerMock,
@@ -1258,6 +1171,7 @@ mod tests {
             &container.flag_info,
             &storage_files.storage_record.persist_flag_info
         ));
+        assert!(storage_files.storage_record.local_overrides.exists());
     }
 
     #[test]
@@ -1540,6 +1454,36 @@ mod tests {
                 value_type: StoredFlagType::ReadWriteBoolean,
             }
         );
+    }
+
+    #[test]
+    fn test_get_all_overrides() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut storage_files = create_mock_storage_files(&container, &root_dir);
+
+        let context_one = storage_files
+            .get_package_flag_context("com.android.aconfig.storage.test_1", "enabled_rw")
+            .unwrap();
+        storage_files.stage_local_override(&context_one, "false").unwrap();
+
+        let context_two = storage_files
+            .get_package_flag_context("com.android.aconfig.storage.test_2", "disabled_rw")
+            .unwrap();
+        storage_files.stage_local_override(&context_two, "false").unwrap();
+
+        let local_overrides = storage_files.get_all_local_overrides().unwrap();
+        assert_eq!(local_overrides.len(), 2);
+
+        let mut override_proto = ProtoFlagOverride::new();
+        override_proto.set_package_name("com.android.aconfig.storage.test_1".to_string());
+        override_proto.set_flag_name("enabled_rw".to_string());
+        override_proto.set_flag_value("false".to_string());
+        assert_eq!(local_overrides[0], override_proto);
+
+        override_proto.set_package_name("com.android.aconfig.storage.test_2".to_string());
+        override_proto.set_flag_name("disabled_rw".to_string());
+        assert_eq!(local_overrides[1], override_proto);
     }
 
     #[test]
