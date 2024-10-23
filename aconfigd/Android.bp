@@ -20,6 +20,12 @@ rust_defaults {
         "libanyhow",
         "libthiserror",
         "libclap",
+        "libmemmap2",
+        "libprotobuf",
+        "libaconfigd_protos_rust",
+        "libaconfig_storage_file",
+        "libaconfig_storage_read_api",
+        "libaconfig_storage_write_api",
     ],
     apex_available: [
         "com.android.configinfrastructure",
@@ -40,5 +46,22 @@ rust_binary {
     srcs: ["src/main.rs"],
     rustlibs: [
         "libaconfigd_mainline",
+    ],
+}
+
+rust_test_host {
+    name: "libaconfigd_mainline.test",
+    team: "trendy_team_android_core_experiments",
+    test_suites: ["general-tests"],
+    defaults: ["aconfigd_mainline.defaults"],
+    srcs: ["src/lib.rs"],
+    rustlibs: [
+        "libtempfile",
+    ],
+    data: [
+        "./tests/data/package.map",
+        "./tests/data/flag.map",
+        "./tests/data/flag.val",
+        "./tests/data/flag.info",
     ],
 }
