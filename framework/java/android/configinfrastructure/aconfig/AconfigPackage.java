@@ -57,9 +57,9 @@ public class AconfigPackage {
     private int mPackageId = -1;
 
     /**
-     * This method will load a Aconfig Package from Aconfig Storage. If the package is not found, an
-     * instance will be still created, but it will not be backed by a real Aconfig package in
-     * storage.
+     * This method will load a Aconfig Package from Aconfig Storage. If the package is not found or
+     * the Aconfig storage is not available on the device, an instance will still be created, but it
+     * will not be backed by a real Aconfig package in storage.
      *
      * @param packageName name of the flag package
      * @return an instance of AconfigPackage
@@ -101,7 +101,13 @@ public class AconfigPackage {
             // check system container first for optimization
             PackageTable pTable = null;
             PackageTable.Node pNode = null;
-            // system map file does not exist on devices before A
+
+            // for devices don't have new storage directly return
+            if (!(new File(MAP_PATH).exists())) {
+                return;
+            }
+
+            // for devices don't have flag files on the system partition
             if (new File(SYSTEM_MAP).exists()) {
                 pTable = PackageTable.fromBytes(mapStorageFile(SYSTEM_MAP));
                 pNode = pTable.get(packageName);
