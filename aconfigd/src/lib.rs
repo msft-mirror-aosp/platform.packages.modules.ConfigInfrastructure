@@ -49,4 +49,7 @@ pub enum AconfigdError {
 
     #[error("fail to override flag")]
     FailToOverride(#[source] anyhow::Error),
+
+    #[error("fail to remove file")]
+    FailToRemoveFile(#[source] anyhow::Error),
 }
