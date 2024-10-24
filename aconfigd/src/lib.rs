@@ -18,6 +18,8 @@
 //! aconfig daemon for mainline (aconfigd-mainline binary).
 
 pub mod storage_files;
+pub mod storage_files_manager;
+pub mod utils;
 
 #[cfg(test)]
 mod test_utils;
@@ -52,4 +54,13 @@ pub enum AconfigdError {
 
     #[error("fail to remove file")]
     FailToRemoveFile(#[source] anyhow::Error),
+
+    #[error("fail to add continer")]
+    FailToAddContainer(#[source] anyhow::Error),
+
+    #[error("fail to update continer")]
+    FailToUpdateContainer(#[source] anyhow::Error),
+
+    #[error("fail to create boot storage files")]
+    FailToCreateBootFiles(#[source] anyhow::Error),
 }
