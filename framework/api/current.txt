@@ -1,1 +1,11 @@
 // Signature format: 2.0
+package android.configinfrastructure.aconfig {
+
+  @FlaggedApi("android.provider.flags.new_storage_public_api") public class AconfigPackage {
+    ctor public AconfigPackage();
+    method @FlaggedApi("android.provider.flags.new_storage_public_api") public boolean getBooleanFlagValue(@NonNull String, boolean);
+    method @FlaggedApi("android.provider.flags.new_storage_public_api") @NonNull public static android.configinfrastructure.aconfig.AconfigPackage load(@NonNull String);
+  }
+
+}
+

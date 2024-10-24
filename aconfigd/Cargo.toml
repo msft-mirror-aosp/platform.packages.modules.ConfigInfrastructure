@@ -1,0 +1,27 @@
+[package]
+name = "aconfigd_mainline"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["cargo"]
+cargo = []
+
+[dependencies]
+anyhow = "1.0.69"
+protobuf = "3.2.0"
+thiserror = "1.0.56"
+clap = { version = "4.1.8", features = ["derive"] }
+memmap2 = "0.8.0"
+tempfile = "3.13.0"
+aconfig_storage_file = {path = "../../../../build/tools/aconfig/aconfig_storage_file"}
+aconfig_storage_read_api = {path = "../../../../build/tools/aconfig/aconfig_storage_read_api"}
+aconfig_storage_write_api = {path = "../../../../build/tools/aconfig/aconfig_storage_write_api"}
+aconfigd_protos = {path = "./proto"}
+
+[[bin]]
+name = "aconfigd-mainline"
+path = "src/main.rs"
+
+[build-dependencies]
+protobuf-codegen = "3.2.0"
