@@ -39,14 +39,7 @@ impl ContainerMock {
         std::fs::copy("./tests/data/flag.map", &flag_map).unwrap();
         std::fs::copy("./tests/data/flag.val", &flag_val).unwrap();
         std::fs::copy("./tests/data/flag.info", &flag_info).unwrap();
-        Self {
-            tmp_dir,
-            name: String::from("mockup"),
-            package_map,
-            flag_map,
-            flag_val,
-            flag_info,
-        }
+        Self { tmp_dir, name: String::from("mockup"), package_map, flag_map, flag_val, flag_info }
     }
 }
 
@@ -75,12 +68,7 @@ impl StorageRootDirMock {
         std::fs::create_dir(&flags_dir).unwrap();
         std::fs::create_dir(&maps_dir).unwrap();
         std::fs::create_dir(&boot_dir).unwrap();
-        Self {
-            tmp_dir,
-            flags_dir,
-            maps_dir,
-            boot_dir,
-        }
+        Self { tmp_dir, flags_dir, maps_dir, boot_dir }
     }
 }
 
