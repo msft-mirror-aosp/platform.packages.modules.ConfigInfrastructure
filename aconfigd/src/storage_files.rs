@@ -887,6 +887,37 @@ impl StorageFiles {
         Ok(())
     }
 
+    /// get flag snapshot
+    pub fn get_flag_snapshot(
+        &mut self,
+        package: &str,
+        flag: &str,
+    ) -> Result<Option<FlagSnapshot>, AconfigdError> {
+        let context = self.get_package_flag_context(package, flag)?;
+        if !context.flag_exists {
+            return Ok(None);
+        }
+
+        let attribute = self.get_flag_attribute(&context)?;
+        let server_value = self.get_server_flag_value(&context)?;
+        let local_value = self.get_local_flag_value(&context)?;
+        let boot_value = self.get_boot_flag_value(&context)?;
+        let default_value = self.get_default_flag_value(&context)?;
+
+        Ok(Some(FlagSnapshot {
+            container: self.storage_record.container.clone(),
+            package: package.to_string(),
+            flag: flag.to_string(),
+            server_value,
+            local_value,
+            boot_value,
+            default_value,
+            is_readwrite: attribute & FlagInfoBit::IsReadWrite as u8 != 0,
+            has_server_override: attribute & FlagInfoBit::HasServerOverride as u8 != 0,
+            has_local_override: attribute & FlagInfoBit::HasLocalOverride as u8 != 0,
+        }))
+    }
+
     /// list flags in a package
     pub fn list_flags_in_package(
         &mut self,
@@ -1590,6 +1621,44 @@ mod tests {
 
         assert_eq!(storage_files.get_boot_flag_value(&context_one).unwrap(), "false");
         assert_eq!(storage_files.get_boot_flag_value(&context_two).unwrap(), "true");
+    }
+
+    #[test]
+    fn test_get_flag_snapshot() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut storage_files = create_mock_storage_files(&container, &root_dir);
+
+        let mut flag = storage_files
+            .get_flag_snapshot("com.android.aconfig.storage.test_1", "not_exist")
+            .unwrap();
+        assert_eq!(flag, None);
+
+        let context = storage_files
+            .get_package_flag_context("com.android.aconfig.storage.test_1", "disabled_rw")
+            .unwrap();
+        storage_files.stage_server_override(&context, "false").unwrap();
+        storage_files.stage_local_override(&context, "true").unwrap();
+        storage_files.create_boot_storage_files().unwrap();
+
+        flag = storage_files
+            .get_flag_snapshot("com.android.aconfig.storage.test_1", "disabled_rw")
+            .unwrap();
+
+        let expected_flag = FlagSnapshot {
+            container: String::from("mockup"),
+            package: String::from("com.android.aconfig.storage.test_1"),
+            flag: String::from("disabled_rw"),
+            server_value: String::from("false"),
+            local_value: String::from("true"),
+            boot_value: String::from("true"),
+            default_value: String::from("false"),
+            is_readwrite: true,
+            has_server_override: true,
+            has_local_override: true,
+        };
+
+        assert_eq!(flag, Some(expected_flag));
     }
 
     #[test]
