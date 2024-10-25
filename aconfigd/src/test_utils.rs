@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-use std::path::PathBuf;
+use std::io::Read;
+use std::path::{Path, PathBuf};
 use tempfile::{tempdir, TempDir};
 
 /// Container mockup
@@ -77,4 +78,20 @@ impl Drop for StorageRootDirMock {
     fn drop(&mut self) {
         std::fs::remove_dir_all(&self.tmp_dir).unwrap();
     }
+}
+
+/// Check if has the same content
+pub(crate) fn has_same_content(file_one: &Path, file_two: &Path) -> bool {
+    assert!(file_one.exists());
+    assert!(file_two.exists());
+
+    let mut f1 = std::fs::File::open(file_one).unwrap();
+    let mut b1 = Vec::new();
+    f1.read_to_end(&mut b1).unwrap();
+
+    let mut f2 = std::fs::File::open(file_two).unwrap();
+    let mut b2 = Vec::new();
+    f2.read_to_end(&mut b2).unwrap();
+
+    b1 == b2
 }
