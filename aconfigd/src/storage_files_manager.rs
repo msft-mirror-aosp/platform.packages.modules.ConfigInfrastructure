@@ -17,10 +17,8 @@
 use crate::storage_files::{FlagSnapshot, StorageFiles};
 use crate::utils::{set_file_permission, write_pb_to_file};
 use crate::AconfigdError;
-use aconfig_storage_file::{FlagValueSummary, StoredFlagType};
 use aconfigd_protos::{
-    ProtoFlagOverride, ProtoLocalFlagOverrides, ProtoPersistStorageRecord,
-    ProtoPersistStorageRecords,
+    ProtoLocalFlagOverrides, ProtoPersistStorageRecord, ProtoPersistStorageRecords,
 };
 use anyhow::anyhow;
 use std::collections::HashMap;
@@ -436,6 +434,7 @@ mod tests {
     use crate::storage_files::StorageRecord;
     use crate::test_utils::{has_same_content, ContainerMock, StorageRootDirMock};
     use crate::utils::read_pb_from_file;
+    use aconfig_storage_file::{FlagValueSummary, StoredFlagType};
     use aconfigd_protos::ProtoFlagOverride;
 
     #[test]
@@ -847,5 +846,164 @@ mod tests {
         };
 
         assert_eq!(flag, Some(expected_flag));
+    }
+
+    #[test]
+    fn test_remove_all_local_override() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut manager = StorageFilesManager::new(&root_dir.tmp_dir.path());
+        init_storage(&container, &root_dir, &mut manager);
+
+        manager
+            .override_flag_value(
+                "com.android.aconfig.storage.test_1",
+                "disabled_rw",
+                "true",
+                FlagOverrideType::LocalOnReboot,
+            )
+            .unwrap();
+
+        manager
+            .override_flag_value(
+                "com.android.aconfig.storage.test_2",
+                "disabled_rw",
+                "true",
+                FlagOverrideType::LocalOnReboot,
+            )
+            .unwrap();
+        manager.create_storage_boot_copy("mockup").unwrap();
+        manager.remove_all_local_overrides().unwrap();
+
+        let mut flag =
+            manager.get_flag_snapshot("com.android.aconfig.storage.test_1", "disabled_rw").unwrap();
+
+        let mut expected_flag = FlagSnapshot {
+            container: String::from("mockup"),
+            package: String::from("com.android.aconfig.storage.test_1"),
+            flag: String::from("disabled_rw"),
+            server_value: String::from(""),
+            local_value: String::new(),
+            boot_value: String::from("true"),
+            default_value: String::from("false"),
+            is_readwrite: true,
+            has_server_override: false,
+            has_local_override: false,
+        };
+
+        assert_eq!(flag, Some(expected_flag));
+
+        flag =
+            manager.get_flag_snapshot("com.android.aconfig.storage.test_2", "disabled_rw").unwrap();
+
+        expected_flag = FlagSnapshot {
+            container: String::from("mockup"),
+            package: String::from("com.android.aconfig.storage.test_2"),
+            flag: String::from("disabled_rw"),
+            server_value: String::from(""),
+            local_value: String::new(),
+            boot_value: String::from("true"),
+            default_value: String::from("false"),
+            is_readwrite: true,
+            has_server_override: false,
+            has_local_override: false,
+        };
+
+        assert_eq!(flag, Some(expected_flag));
+    }
+
+    #[test]
+    fn test_list_flags_in_package() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut manager = StorageFilesManager::new(&root_dir.tmp_dir.path());
+        init_storage(&container, &root_dir, &mut manager);
+        add_example_overrides(&mut manager);
+        manager.create_storage_boot_copy("mockup").unwrap();
+
+        let flags = manager.list_flags_in_package("com.android.aconfig.storage.test_1").unwrap();
+
+        let mut flag = FlagSnapshot {
+            container: String::from("mockup"),
+            package: String::from("com.android.aconfig.storage.test_1"),
+            flag: String::from("disabled_rw"),
+            server_value: String::from("false"),
+            local_value: String::from("true"),
+            boot_value: String::from("true"),
+            default_value: String::from("false"),
+            is_readwrite: true,
+            has_server_override: true,
+            has_local_override: true,
+        };
+        assert_eq!(flags[0], flag);
+
+        flag = FlagSnapshot {
+            container: String::from("mockup"),
+            package: String::from("com.android.aconfig.storage.test_1"),
+            flag: String::from("enabled_ro"),
+            server_value: String::new(),
+            local_value: String::new(),
+            boot_value: String::from("true"),
+            default_value: String::from("true"),
+            is_readwrite: false,
+            has_server_override: false,
+            has_local_override: false,
+        };
+        assert_eq!(flags[1], flag);
+
+        flag = FlagSnapshot {
+            container: String::from("mockup"),
+            package: String::from("com.android.aconfig.storage.test_1"),
+            flag: String::from("enabled_rw"),
+            server_value: String::from("false"),
+            local_value: String::new(),
+            boot_value: String::from("false"),
+            default_value: String::from("true"),
+            is_readwrite: true,
+            has_server_override: true,
+            has_local_override: false,
+        };
+        assert_eq!(flags[2], flag);
+    }
+
+    #[test]
+    fn test_list_flags_in_container() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut manager = StorageFilesManager::new(&root_dir.tmp_dir.path());
+        init_storage(&container, &root_dir, &mut manager);
+        add_example_overrides(&mut manager);
+        manager.create_storage_boot_copy("mockup").unwrap();
+
+        let flags = manager.list_flags_in_container("mockup").unwrap();
+        assert_eq!(flags.len(), 8);
+
+        let mut flag = FlagSnapshot {
+            container: String::from("mockup"),
+            package: String::from("com.android.aconfig.storage.test_1"),
+            flag: String::from("enabled_rw"),
+            server_value: String::from("false"),
+            local_value: String::new(),
+            boot_value: String::from("false"),
+            default_value: String::from("true"),
+            is_readwrite: true,
+            has_server_override: true,
+            has_local_override: false,
+        };
+        assert_eq!(flags[2], flag);
+
+        flag = FlagSnapshot {
+            container: String::from("mockup"),
+            package: String::from("com.android.aconfig.storage.test_1"),
+            flag: String::from("disabled_rw"),
+            server_value: String::from("false"),
+            local_value: String::from("true"),
+            boot_value: String::from("true"),
+            default_value: String::from("false"),
+            is_readwrite: true,
+            has_server_override: true,
+            has_local_override: true,
+        };
+        assert_eq!(flags[0], flag);
     }
 }

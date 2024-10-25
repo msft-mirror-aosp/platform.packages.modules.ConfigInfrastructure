@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+use crate::utils::remove_file;
 use crate::utils::{copy_file, read_pb_from_file, set_file_permission, write_pb_to_file};
 use crate::AconfigdError;
 use aconfig_storage_file::{
@@ -814,42 +815,11 @@ impl StorageFiles {
 
     /// Clean up, it cannot be implemented as the drop trait as it needs to return a Result
     pub fn remove_persist_files(&mut self) -> Result<(), AconfigdError> {
-        std::fs::remove_file(&self.storage_record.persist_package_map).map_err(|errmsg| {
-            AconfigdError::FailToRemoveFile(anyhow!(
-                "Fail to remove file {} while destructing storage files: {}",
-                self.storage_record.persist_package_map.display(),
-                errmsg
-            ))
-        })?;
-        std::fs::remove_file(&self.storage_record.persist_flag_map).map_err(|errmsg| {
-            AconfigdError::FailToRemoveFile(anyhow!(
-                "Fail to remove file {} while destructing storage files: {}",
-                self.storage_record.persist_flag_map.display(),
-                errmsg
-            ))
-        })?;
-        std::fs::remove_file(&self.storage_record.persist_flag_val).map_err(|errmsg| {
-            AconfigdError::FailToRemoveFile(anyhow!(
-                "Fail to remove file {} while destructing storage files: {}",
-                self.storage_record.persist_flag_val.display(),
-                errmsg
-            ))
-        })?;
-        std::fs::remove_file(&self.storage_record.persist_flag_info).map_err(|errmsg| {
-            AconfigdError::FailToRemoveFile(anyhow!(
-                "Fail to remove file {} while destructing storage files: {}",
-                self.storage_record.persist_flag_info.display(),
-                errmsg
-            ))
-        })?;
-        std::fs::remove_file(&self.storage_record.local_overrides).map_err(|errmsg| {
-            AconfigdError::FailToRemoveFile(anyhow!(
-                "Fail to remove file {} while destructing storage files: {}",
-                self.storage_record.local_overrides.display(),
-                errmsg
-            ))
-        })?;
-        Ok(())
+        remove_file(&self.storage_record.persist_package_map)?;
+        remove_file(&self.storage_record.persist_flag_map)?;
+        remove_file(&self.storage_record.persist_flag_val)?;
+        remove_file(&self.storage_record.persist_flag_info)?;
+        remove_file(&self.storage_record.local_overrides)
     }
 
     /// Create boot storage files
