@@ -63,5 +63,9 @@ rust_test_host {
         "./tests/data/flag.map",
         "./tests/data/flag.val",
         "./tests/data/flag.info",
+        "./tests/data/container_with_more_flags.package.map",
+        "./tests/data/container_with_more_flags.flag.map",
+        "./tests/data/container_with_more_flags.flag.val",
+        "./tests/data/container_with_more_flags.flag.info",
     ],
 }
