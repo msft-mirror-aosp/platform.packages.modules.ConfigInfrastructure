@@ -14,6 +14,7 @@ thiserror = "1.0.56"
 clap = { version = "4.1.8", features = ["derive"] }
 memmap2 = "0.8.0"
 tempfile = "3.13.0"
+log = "0.4"
 aconfig_storage_file = {path = "../../../../build/tools/aconfig/aconfig_storage_file"}
 aconfig_storage_read_api = {path = "../../../../build/tools/aconfig/aconfig_storage_read_api"}
 aconfig_storage_write_api = {path = "../../../../build/tools/aconfig/aconfig_storage_write_api"}
