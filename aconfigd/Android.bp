@@ -21,6 +21,7 @@ rust_defaults {
         "libthiserror",
         "libclap",
         "libmemmap2",
+        "liblog_rust",
         "libprotobuf",
         "libaconfigd_protos_rust",
         "libaconfig_storage_file",
