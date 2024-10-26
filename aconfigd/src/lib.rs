@@ -17,7 +17,10 @@
 //! `aconfig_mainline` is a crate that defines library functions that are needed by
 //! aconfig daemon for mainline (aconfigd-mainline binary).
 
+pub mod aconfigd;
 pub mod storage_files;
+pub mod storage_files_manager;
+pub mod utils;
 
 #[cfg(test)]
 mod test_utils;
@@ -44,9 +47,27 @@ pub enum AconfigdError {
     #[error("failed to copy file")]
     FailToCopyFile(#[source] anyhow::Error),
 
+    #[error("fail to remove file")]
+    FailToRemoveFile(#[source] anyhow::Error),
+
+    #[error("fail to get file metadata")]
+    FailToGetFileMetadata(#[source] anyhow::Error),
+
+    #[error("fail to read dir")]
+    FailToReadDir(#[source] anyhow::Error),
+
     #[error("flag does not exist")]
     FlagDoesNotExist(#[source] anyhow::Error),
 
     #[error("fail to override flag")]
     FailToOverride(#[source] anyhow::Error),
+
+    #[error("fail to add continer")]
+    FailToAddContainer(#[source] anyhow::Error),
+
+    #[error("fail to update continer")]
+    FailToUpdateContainer(#[source] anyhow::Error),
+
+    #[error("fail to create boot storage files")]
+    FailToCreateBootFiles(#[source] anyhow::Error),
 }
