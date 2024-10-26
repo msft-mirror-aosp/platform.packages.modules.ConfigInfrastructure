@@ -14,8 +14,12 @@
  * limitations under the License.
  */
 
+use crate::utils::remove_file;
+use crate::utils::{copy_file, read_pb_from_file, set_file_permission, write_pb_to_file};
 use crate::AconfigdError;
-use aconfig_storage_file::{FlagInfoBit, FlagValueType};
+use aconfig_storage_file::{
+    list_flags, list_flags_with_info, FlagInfoBit, FlagValueSummary, FlagValueType,
+};
 use aconfig_storage_read_api::{
     get_boolean_flag_value, get_flag_read_context, get_package_read_context,
     get_storage_file_version, map_file,
@@ -27,7 +31,7 @@ use aconfig_storage_write_api::{
 use aconfigd_protos::{ProtoFlagOverride, ProtoLocalFlagOverrides, ProtoPersistStorageRecord};
 use anyhow::anyhow;
 use memmap2::{Mmap, MmapMut};
-use std::os::unix::fs::PermissionsExt;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 // In memory data structure for storage file locations for each container
@@ -98,47 +102,19 @@ pub(crate) struct PackageFlagContext {
     pub flag_index: u32,
 }
 
-/// TODO: temp imlementation to copy file, to be replaced by util one
-pub fn copy_file(src: &Path, dst: &Path, mode: u32) -> Result<(), AconfigdError> {
-    std::fs::copy(src, dst).map_err(|errmsg| {
-        AconfigdError::FailToCopyFile(anyhow!(
-            "Failed to copy file from {} to {}: {}",
-            src.display(),
-            dst.display(),
-            errmsg
-        ))
-    })?;
-    let perms = std::fs::Permissions::from_mode(mode);
-    std::fs::set_permissions(dst, perms).map_err(|errmsg| {
-        AconfigdError::FailToUpdateFilePerm(anyhow!(
-            "Failed to set file permission to 0444 for {}: {}",
-            dst.display(),
-            errmsg
-        ))
-    })?;
-    Ok(())
-}
-
-/// TODO: temp implementation to read pb from file, to be replaced by util one
-pub fn read_pb_from_file<T: protobuf::Message>(file: &Path) -> Result<T, AconfigdError> {
-    if !Path::new(file).exists() {
-        return Ok(T::new());
-    }
-
-    let data = std::fs::read(file).map_err(|errmsg| {
-        AconfigdError::FailToParse(anyhow!(
-            "Failed to read file {} to buffer: {}",
-            file.display(),
-            errmsg
-        ))
-    })?;
-    protobuf::Message::parse_from_bytes(data.as_ref()).map_err(|errmsg| {
-        AconfigdError::FailToParse(anyhow!(
-            "Failed to read file {} to buffer: {}",
-            file.display(),
-            errmsg
-        ))
-    })
+// Flag snapshot in storage
+#[derive(PartialEq, Debug)]
+pub(crate) struct FlagSnapshot {
+    pub container: String,
+    pub package: String,
+    pub flag: String,
+    pub server_value: String,
+    pub local_value: String,
+    pub boot_value: String,
+    pub default_value: String,
+    pub is_readwrite: bool,
+    pub has_server_override: bool,
+    pub has_local_override: bool,
 }
 
 impl StorageFiles {
@@ -167,12 +143,8 @@ impl StorageFiles {
             default_flag_map: flag_map.to_path_buf(),
             default_flag_val: flag_val.to_path_buf(),
             default_flag_info: flag_info.to_path_buf(),
-            persist_package_map: root_dir
-                .join("maps")
-                .join(container.to_string() + ".package.map"),
-            persist_flag_map: root_dir
-                .join("maps")
-                .join(container.to_string() + ".flag.map"),
+            persist_package_map: root_dir.join("maps").join(container.to_string() + ".package.map"),
+            persist_flag_map: root_dir.join("maps").join(container.to_string() + ".flag.map"),
             persist_flag_val: root_dir.join("flags").join(container.to_string() + ".val"),
             persist_flag_info: root_dir.join("flags").join(container.to_string() + ".info"),
             local_overrides: root_dir
@@ -187,6 +159,9 @@ impl StorageFiles {
         copy_file(flag_map, &record.persist_flag_map, 0o444)?;
         copy_file(flag_val, &record.persist_flag_val, 0o644)?;
         copy_file(flag_info, &record.persist_flag_info, 0o644)?;
+
+        let pb = ProtoLocalFlagOverrides::new();
+        write_pb_to_file::<ProtoLocalFlagOverrides>(&pb, &record.local_overrides)?;
 
         let files = Self {
             storage_record: record,
@@ -214,24 +189,14 @@ impl StorageFiles {
             persist_package_map: root_dir
                 .join("maps")
                 .join(pb.container().to_string() + ".package.map"),
-            persist_flag_map: root_dir
-                .join("maps")
-                .join(pb.container().to_string() + ".flag.map"),
-            persist_flag_val: root_dir
-                .join("flags")
-                .join(pb.container().to_string() + ".val"),
-            persist_flag_info: root_dir
-                .join("flags")
-                .join(pb.container().to_string() + ".info"),
+            persist_flag_map: root_dir.join("maps").join(pb.container().to_string() + ".flag.map"),
+            persist_flag_val: root_dir.join("flags").join(pb.container().to_string() + ".val"),
+            persist_flag_info: root_dir.join("flags").join(pb.container().to_string() + ".info"),
             local_overrides: root_dir
                 .join("flags")
                 .join(pb.container().to_string() + "_local_overrides.pb"),
-            boot_flag_val: root_dir
-                .join("boot")
-                .join(pb.container().to_string() + ".val"),
-            boot_flag_info: root_dir
-                .join("boot")
-                .join(pb.container().to_string() + ".info"),
+            boot_flag_val: root_dir.join("boot").join(pb.container().to_string() + ".val"),
+            boot_flag_info: root_dir.join("boot").join(pb.container().to_string() + ".info"),
             digest: pb.digest().to_string(),
         };
 
@@ -277,12 +242,10 @@ impl StorageFiles {
                 )?);
             }
         }
-        self.package_map
-            .as_ref()
-            .ok_or(AconfigdError::FailToMap(anyhow!(
-                "Failed to map file {}",
-                &self.storage_record.persist_package_map.display()
-            )))
+        self.package_map.as_ref().ok_or(AconfigdError::FailToMap(anyhow!(
+            "Failed to map file {}",
+            &self.storage_record.persist_package_map.display()
+        )))
     }
 
     /// Get flag map memory mapping.
@@ -290,17 +253,14 @@ impl StorageFiles {
         if self.flag_map.is_none() {
             // SAFETY: Here it is safe as flag map files are always read only.
             unsafe {
-                self.flag_map = Some(Self::get_immutable_file_mapping(
-                    &self.storage_record.persist_flag_map,
-                )?);
+                self.flag_map =
+                    Some(Self::get_immutable_file_mapping(&self.storage_record.persist_flag_map)?);
             }
         }
-        self.flag_map
-            .as_ref()
-            .ok_or(AconfigdError::FailToMap(anyhow!(
-                "Failed to map file {}",
-                &self.storage_record.persist_flag_map.display()
-            )))
+        self.flag_map.as_ref().ok_or(AconfigdError::FailToMap(anyhow!(
+            "Failed to map file {}",
+            &self.storage_record.persist_flag_map.display()
+        )))
     }
 
     /// Get default flag value memory mapping.
@@ -308,17 +268,14 @@ impl StorageFiles {
         if self.flag_val.is_none() {
             // SAFETY: Here it is safe as default flag value files are always read only.
             unsafe {
-                self.flag_val = Some(Self::get_immutable_file_mapping(
-                    &self.storage_record.default_flag_val,
-                )?);
+                self.flag_val =
+                    Some(Self::get_immutable_file_mapping(&self.storage_record.default_flag_val)?);
             }
         }
-        self.flag_val
-            .as_ref()
-            .ok_or(AconfigdError::FailToMap(anyhow!(
-                "Failed to map file {}",
-                &self.storage_record.default_flag_val.display()
-            )))
+        self.flag_val.as_ref().ok_or(AconfigdError::FailToMap(anyhow!(
+            "Failed to map file {}",
+            &self.storage_record.default_flag_val.display()
+        )))
     }
 
     /// Get boot flag value memory mapping.
@@ -332,17 +289,14 @@ impl StorageFiles {
         if self.boot_flag_val.is_none() {
             // SAFETY: As per the safety comment, there are no other writes to the underlying file.
             unsafe {
-                self.boot_flag_val = Some(Self::get_immutable_file_mapping(
-                    &self.storage_record.boot_flag_val,
-                )?);
+                self.boot_flag_val =
+                    Some(Self::get_immutable_file_mapping(&self.storage_record.boot_flag_val)?);
             }
         }
-        self.boot_flag_val
-            .as_ref()
-            .ok_or(AconfigdError::FailToMap(anyhow!(
-                "Failed to map file {}",
-                &self.storage_record.boot_flag_val.display()
-            )))
+        self.boot_flag_val.as_ref().ok_or(AconfigdError::FailToMap(anyhow!(
+            "Failed to map file {}",
+            &self.storage_record.boot_flag_val.display()
+        )))
     }
 
     /// Get boot flag info memory mapping.
@@ -356,17 +310,14 @@ impl StorageFiles {
         if self.boot_flag_info.is_none() {
             // SAFETY: As per the safety comment, there are no other writes to the underlying file.
             unsafe {
-                self.boot_flag_info = Some(Self::get_immutable_file_mapping(
-                    &self.storage_record.boot_flag_info,
-                )?);
+                self.boot_flag_info =
+                    Some(Self::get_immutable_file_mapping(&self.storage_record.boot_flag_info)?);
             }
         }
-        self.boot_flag_info
-            .as_ref()
-            .ok_or(AconfigdError::FailToMap(anyhow!(
-                "Failed to map file {}",
-                &self.storage_record.boot_flag_info.display()
-            )))
+        self.boot_flag_info.as_ref().ok_or(AconfigdError::FailToMap(anyhow!(
+            "Failed to map file {}",
+            &self.storage_record.boot_flag_info.display()
+        )))
     }
 
     /// Get mutable file mapping of a file.
@@ -377,7 +328,9 @@ impl StorageFiles {
     /// file not thru this memory mapped file or there are concurrent writes to this
     /// memory mapped file. Ensure all writes to the underlying file are thru this memory
     /// mapped file and there are no concurrent writes.
-    unsafe fn get_mutable_file_mapping(file_path: &Path) -> Result<MmapMut, AconfigdError> {
+    pub(crate) unsafe fn get_mutable_file_mapping(
+        file_path: &Path,
+    ) -> Result<MmapMut, AconfigdError> {
         // SAFETY: As per the safety comment, there are no other writes to the underlying file.
         unsafe {
             map_mutable_storage_file(&file_path.display().to_string()).map_err(|errmsg| {
@@ -396,17 +349,14 @@ impl StorageFiles {
             // SAFETY: safety is ensured that all writes to the persist file is thru this
             // memory mapping, and there are no concurrent writes
             unsafe {
-                self.persist_flag_val = Some(Self::get_mutable_file_mapping(
-                    &self.storage_record.persist_flag_val,
-                )?);
+                self.persist_flag_val =
+                    Some(Self::get_mutable_file_mapping(&self.storage_record.persist_flag_val)?);
             }
         }
-        self.persist_flag_val
-            .as_mut()
-            .ok_or(AconfigdError::FailToMap(anyhow!(
-                "Failed to map file {}",
-                &self.storage_record.persist_flag_val.display()
-            )))
+        self.persist_flag_val.as_mut().ok_or(AconfigdError::FailToMap(anyhow!(
+            "Failed to map file {}",
+            &self.storage_record.persist_flag_val.display()
+        )))
     }
 
     /// Get persist flag info memory mapping.
@@ -415,17 +365,14 @@ impl StorageFiles {
             // SAFETY: safety is ensured that all writes to the persist file is thru this
             // memory mapping, and there are no concurrent writes
             unsafe {
-                self.persist_flag_info = Some(Self::get_mutable_file_mapping(
-                    &self.storage_record.persist_flag_info,
-                )?);
+                self.persist_flag_info =
+                    Some(Self::get_mutable_file_mapping(&self.storage_record.persist_flag_info)?);
             }
         }
-        self.persist_flag_info
-            .as_mut()
-            .ok_or(AconfigdError::FailToMap(anyhow!(
-                "Failed to map file {}",
-                &self.storage_record.persist_flag_info.display()
-            )))
+        self.persist_flag_info.as_mut().ok_or(AconfigdError::FailToMap(anyhow!(
+            "Failed to map file {}",
+            &self.storage_record.persist_flag_info.display()
+        )))
     }
 
     /// Get storage record
@@ -689,7 +636,7 @@ impl StorageFiles {
     }
 
     /// Set flag has local override to file
-    fn set_flag_has_local_override_to_file(
+    pub fn set_flag_has_local_override_to_file(
         file: &mut MmapMut,
         context: &PackageFlagContext,
         value: bool,
@@ -766,51 +713,397 @@ impl StorageFiles {
             pb.overrides.push(new_entry);
         }
 
-        let bytes = protobuf::Message::write_to_bytes(&pb).map_err(|errmsg| {
-            AconfigdError::FailToOverride(anyhow!(
-                "Fail to set flag local override for {}.{}: {}",
-                context.package,
-                context.flag,
-                errmsg
-            ))
-        })?;
-        std::fs::write(&self.storage_record.local_overrides, bytes).map_err(|errmsg| {
-            AconfigdError::FailToOverride(anyhow!(
-                "Fail to set flag local override for {}.{}: {}",
-                context.package,
-                context.flag,
-                errmsg
-            ))
-        })?;
+        write_pb_to_file::<ProtoLocalFlagOverrides>(&pb, &self.storage_record.local_overrides)?;
 
         let flag_info_file = self.get_persist_flag_info()?;
         Self::set_flag_has_local_override_to_file(flag_info_file, context, true)?;
 
         Ok(())
     }
+
+    /// Get all current server overrides
+    pub fn get_all_server_overrides(&mut self) -> Result<Vec<FlagValueSummary>, AconfigdError> {
+        let listed_flags = list_flags_with_info(
+            &self.storage_record.persist_package_map.display().to_string(),
+            &self.storage_record.persist_flag_map.display().to_string(),
+            &self.storage_record.persist_flag_val.display().to_string(),
+            &self.storage_record.persist_flag_info.display().to_string(),
+        )
+        .map_err(|errmsg| {
+            AconfigdError::FailToParse(anyhow!(
+                "Failed to list flags with info for container {}: {}",
+                &self.storage_record.container,
+                errmsg
+            ))
+        })?;
+
+        Ok(listed_flags
+            .into_iter()
+            .filter(|f| f.has_server_override)
+            .map(|f| FlagValueSummary {
+                package_name: f.package_name,
+                flag_name: f.flag_name,
+                flag_value: f.flag_value,
+                value_type: f.value_type,
+            })
+            .collect())
+    }
+
+    /// Get all local overrides
+    pub fn get_all_local_overrides(&mut self) -> Result<Vec<ProtoFlagOverride>, AconfigdError> {
+        let pb =
+            read_pb_from_file::<ProtoLocalFlagOverrides>(&self.storage_record.local_overrides)?;
+        Ok(pb.overrides)
+    }
+
+    /// Remove a local flag override
+    pub fn remove_local_override(
+        &mut self,
+        context: &PackageFlagContext,
+    ) -> Result<(), AconfigdError> {
+        let attribute = self.get_flag_attribute(context)?;
+        if (attribute & FlagInfoBit::HasLocalOverride as u8) == 0 {
+            return Err(AconfigdError::FailToOverride(anyhow!(
+                "Fail to remove local override for {}.{}, it does not have local override",
+                context.package,
+                context.flag,
+            )));
+        }
+
+        let mut pb =
+            read_pb_from_file::<ProtoLocalFlagOverrides>(&self.storage_record.local_overrides)?;
+        pb.overrides = pb
+            .overrides
+            .into_iter()
+            .filter(|f| f.package_name() != context.package || f.flag_name() != context.flag)
+            .collect();
+        write_pb_to_file::<ProtoLocalFlagOverrides>(&pb, &self.storage_record.local_overrides)?;
+
+        let flag_info_file = self.get_persist_flag_info()?;
+        Self::set_flag_has_local_override_to_file(flag_info_file, context, false)?;
+
+        Ok(())
+    }
+
+    /// Remove all local flag overrides
+    pub fn remove_all_local_overrides(&mut self) -> Result<(), AconfigdError> {
+        let pb =
+            read_pb_from_file::<ProtoLocalFlagOverrides>(&self.storage_record.local_overrides)?;
+
+        for entry in pb.overrides {
+            let context = self.get_package_flag_context(entry.package_name(), entry.flag_name())?;
+            let attribute = self.get_flag_attribute(&context)?;
+            if (attribute & FlagInfoBit::HasLocalOverride as u8) == 0 {
+                return Err(AconfigdError::FailToOverride(anyhow!(
+                    "Fail to remove local override for {}.{}, it does not have local override",
+                    context.package,
+                    context.flag,
+                )));
+            }
+
+            let flag_info_file = self.get_persist_flag_info()?;
+            Self::set_flag_has_local_override_to_file(flag_info_file, &context, false)?;
+        }
+
+        write_pb_to_file::<ProtoLocalFlagOverrides>(
+            &ProtoLocalFlagOverrides::new(),
+            &self.storage_record.local_overrides,
+        )?;
+
+        Ok(())
+    }
+
+    /// Clean up, it cannot be implemented as the drop trait as it needs to return a Result
+    pub fn remove_persist_files(&mut self) -> Result<(), AconfigdError> {
+        remove_file(&self.storage_record.persist_package_map)?;
+        remove_file(&self.storage_record.persist_flag_map)?;
+        remove_file(&self.storage_record.persist_flag_val)?;
+        remove_file(&self.storage_record.persist_flag_info)?;
+        remove_file(&self.storage_record.local_overrides)
+    }
+
+    /// Create boot storage files
+    pub fn create_boot_storage_files(&mut self) -> Result<(), AconfigdError> {
+        if self.storage_record.boot_flag_val.exists() && self.storage_record.boot_flag_info.exists()
+        {
+            return Ok(());
+        }
+
+        copy_file(
+            &self.storage_record.persist_flag_info,
+            &self.storage_record.boot_flag_info,
+            0o444,
+        )?;
+        copy_file(
+            &self.storage_record.persist_flag_val,
+            &self.storage_record.boot_flag_val,
+            0o644,
+        )?;
+
+        let pb =
+            read_pb_from_file::<ProtoLocalFlagOverrides>(&self.storage_record.local_overrides)?;
+
+        for entry in pb.overrides {
+            let context = self.get_package_flag_context(entry.package_name(), entry.flag_name())?;
+            // SAFETY: the safety is ensured that there will be no immutable mapping created
+            // before this mutable mapping is created and written to. Also, this mutable mapping
+            // is dropped right after this write.
+            let mut flag_val_file =
+                unsafe { Self::get_mutable_file_mapping(&self.storage_record.boot_flag_val)? };
+            Self::set_flag_value_to_file(&mut flag_val_file, &context, entry.flag_value())?;
+        }
+
+        set_file_permission(&self.storage_record.boot_flag_val, 0o444)?;
+        Ok(())
+    }
+
+    /// get flag snapshot
+    pub fn get_flag_snapshot(
+        &mut self,
+        package: &str,
+        flag: &str,
+    ) -> Result<Option<FlagSnapshot>, AconfigdError> {
+        let context = self.get_package_flag_context(package, flag)?;
+        if !context.flag_exists {
+            return Ok(None);
+        }
+
+        let attribute = self.get_flag_attribute(&context)?;
+        let server_value = self.get_server_flag_value(&context)?;
+        let local_value = self.get_local_flag_value(&context)?;
+        let boot_value = self.get_boot_flag_value(&context)?;
+        let default_value = self.get_default_flag_value(&context)?;
+
+        Ok(Some(FlagSnapshot {
+            container: self.storage_record.container.clone(),
+            package: package.to_string(),
+            flag: flag.to_string(),
+            server_value,
+            local_value,
+            boot_value,
+            default_value,
+            is_readwrite: attribute & FlagInfoBit::IsReadWrite as u8 != 0,
+            has_server_override: attribute & FlagInfoBit::HasServerOverride as u8 != 0,
+            has_local_override: attribute & FlagInfoBit::HasLocalOverride as u8 != 0,
+        }))
+    }
+
+    /// list flags in a package
+    pub fn list_flags_in_package(
+        &mut self,
+        package: &str,
+    ) -> Result<Vec<FlagSnapshot>, AconfigdError> {
+        if !self.has_package(package)? {
+            return Ok(Vec::new());
+        }
+
+        let mut snapshots: Vec<_> = list_flags_with_info(
+            &self.storage_record.persist_package_map.display().to_string(),
+            &self.storage_record.persist_flag_map.display().to_string(),
+            &self.storage_record.persist_flag_val.display().to_string(),
+            &self.storage_record.persist_flag_info.display().to_string(),
+        )
+        .map_err(|errmsg| {
+            AconfigdError::FailToParse(anyhow!(
+                "Failed to list persist flags with info for container {}: {}",
+                &self.storage_record.container,
+                errmsg
+            ))
+        })?
+        .into_iter()
+        .filter(|f| f.package_name == package)
+        .map(|f| FlagSnapshot {
+            container: self.storage_record.container.clone(),
+            package: f.package_name.clone(),
+            flag: f.flag_name.clone(),
+            server_value: if f.has_server_override { f.flag_value.clone() } else { String::new() },
+            local_value: String::new(),
+            boot_value: String::new(),
+            default_value: String::new(),
+            is_readwrite: f.is_readwrite,
+            has_server_override: f.has_server_override,
+            has_local_override: f.has_local_override,
+        })
+        .collect();
+
+        let mut flag_index = HashMap::new();
+        for (i, f) in snapshots.iter().enumerate() {
+            flag_index.insert(f.package.clone() + "/" + &f.flag, i);
+        }
+
+        let mut flags: Vec<_> = list_flags(
+            &self.storage_record.persist_package_map.display().to_string(),
+            &self.storage_record.persist_flag_map.display().to_string(),
+            &self.storage_record.boot_flag_val.display().to_string(),
+        )
+        .map_err(|errmsg| {
+            AconfigdError::FailToParse(anyhow!(
+                "Failed to list boot flags for container {}: {}",
+                &self.storage_record.container,
+                errmsg
+            ))
+        })?
+        .into_iter()
+        .filter(|f| f.package_name == package)
+        .collect();
+
+        for f in flags.iter() {
+            let full_flag_name = f.package_name.clone() + "/" + &f.flag_name;
+            let index =
+                flag_index.get(&full_flag_name).ok_or(AconfigdError::FailToParse(anyhow!(
+                    "Flag {}.{} appears in boot files but not in persist fliles",
+                    &f.package_name,
+                    &f.flag_name,
+                )))?;
+            snapshots[*index].boot_value = f.flag_value.clone();
+        }
+
+        flags = list_flags(
+            &self.storage_record.persist_package_map.display().to_string(),
+            &self.storage_record.persist_flag_map.display().to_string(),
+            &self.storage_record.default_flag_val.display().to_string(),
+        )
+        .map_err(|errmsg| {
+            AconfigdError::FailToParse(anyhow!(
+                "Failed to list default flags for container {}: {}",
+                &self.storage_record.container,
+                errmsg
+            ))
+        })?
+        .into_iter()
+        .filter(|f| f.package_name == package)
+        .collect();
+
+        for f in flags.iter() {
+            let full_flag_name = f.package_name.clone() + "/" + &f.flag_name;
+            let index =
+                flag_index.get(&full_flag_name).ok_or(AconfigdError::FailToParse(anyhow!(
+                    "Flag {}.{} appears in default files but not in persist fliles",
+                    &f.package_name,
+                    &f.flag_name,
+                )))?;
+            snapshots[*index].default_value = f.flag_value.clone();
+        }
+
+        let pb =
+            read_pb_from_file::<ProtoLocalFlagOverrides>(&self.storage_record.local_overrides)?;
+
+        for entry in pb.overrides {
+            let full_flag_name = entry.package_name().to_string() + "/" + entry.flag_name();
+            if let Some(index) = flag_index.get(&full_flag_name) {
+                snapshots[*index].local_value = entry.flag_value().to_string();
+            }
+        }
+
+        Ok(snapshots)
+    }
+
+    /// list all flags in a container
+    pub fn list_all_flags(&mut self) -> Result<Vec<FlagSnapshot>, AconfigdError> {
+        let mut snapshots: Vec<_> = list_flags_with_info(
+            &self.storage_record.persist_package_map.display().to_string(),
+            &self.storage_record.persist_flag_map.display().to_string(),
+            &self.storage_record.persist_flag_val.display().to_string(),
+            &self.storage_record.persist_flag_info.display().to_string(),
+        )
+        .map_err(|errmsg| {
+            AconfigdError::FailToParse(anyhow!(
+                "Failed to list persist flags with info for container {}: {}",
+                &self.storage_record.container,
+                errmsg
+            ))
+        })?
+        .into_iter()
+        .map(|f| FlagSnapshot {
+            container: self.storage_record.container.clone(),
+            package: f.package_name.clone(),
+            flag: f.flag_name.clone(),
+            server_value: if f.has_server_override { f.flag_value.clone() } else { String::new() },
+            local_value: String::new(),
+            boot_value: String::new(),
+            default_value: String::new(),
+            is_readwrite: f.is_readwrite,
+            has_server_override: f.has_server_override,
+            has_local_override: f.has_local_override,
+        })
+        .collect();
+
+        let mut flag_index = HashMap::new();
+        for (i, f) in snapshots.iter().enumerate() {
+            flag_index.insert(f.package.clone() + "/" + &f.flag, i);
+        }
+
+        let mut flags: Vec<_> = list_flags(
+            &self.storage_record.persist_package_map.display().to_string(),
+            &self.storage_record.persist_flag_map.display().to_string(),
+            &self.storage_record.boot_flag_val.display().to_string(),
+        )
+        .map_err(|errmsg| {
+            AconfigdError::FailToParse(anyhow!(
+                "Failed to list boot flags for container {}: {}",
+                &self.storage_record.container,
+                errmsg
+            ))
+        })?
+        .into_iter()
+        .collect();
+
+        for f in flags.iter() {
+            let full_flag_name = f.package_name.clone() + "/" + &f.flag_name;
+            let index =
+                flag_index.get(&full_flag_name).ok_or(AconfigdError::FailToParse(anyhow!(
+                    "Flag {}.{} appears in boot files but not in persist fliles",
+                    &f.package_name,
+                    &f.flag_name,
+                )))?;
+            snapshots[*index].boot_value = f.flag_value.clone();
+        }
+
+        flags = list_flags(
+            &self.storage_record.persist_package_map.display().to_string(),
+            &self.storage_record.persist_flag_map.display().to_string(),
+            &self.storage_record.default_flag_val.display().to_string(),
+        )
+        .map_err(|errmsg| {
+            AconfigdError::FailToParse(anyhow!(
+                "Failed to list default flags for container {}: {}",
+                &self.storage_record.container,
+                errmsg
+            ))
+        })?
+        .into_iter()
+        .collect();
+
+        for f in flags.iter() {
+            let full_flag_name = f.package_name.clone() + "/" + &f.flag_name;
+            let index =
+                flag_index.get(&full_flag_name).ok_or(AconfigdError::FailToParse(anyhow!(
+                    "Flag {}.{} appears in default files but not in persist fliles",
+                    &f.package_name,
+                    &f.flag_name,
+                )))?;
+            snapshots[*index].default_value = f.flag_value.clone();
+        }
+
+        let pb =
+            read_pb_from_file::<ProtoLocalFlagOverrides>(&self.storage_record.local_overrides)?;
+
+        for entry in pb.overrides {
+            let full_flag_name = entry.package_name().to_string() + "/" + entry.flag_name();
+            if let Some(index) = flag_index.get(&full_flag_name) {
+                snapshots[*index].local_value = entry.flag_value().to_string();
+            }
+        }
+
+        Ok(snapshots)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::{ContainerMock, StorageRootDirMock};
-    use std::fs::File;
-    use std::io::Read;
-
-    fn has_same_content(file_one: &Path, file_two: &Path) -> bool {
-        assert!(file_one.exists());
-        assert!(file_two.exists());
-
-        let mut f1 = File::open(file_one).unwrap();
-        let mut b1 = Vec::new();
-        f1.read_to_end(&mut b1).unwrap();
-
-        let mut f2 = File::open(file_two).unwrap();
-        let mut b2 = Vec::new();
-        f2.read_to_end(&mut b2).unwrap();
-
-        b1 == b2
-    }
+    use crate::test_utils::{has_same_content, ContainerMock, StorageRootDirMock};
+    use aconfig_storage_file::StoredFlagType;
 
     fn create_mock_storage_files(
         container: &ContainerMock,
@@ -879,6 +1172,7 @@ mod tests {
             &container.flag_info,
             &storage_files.storage_record.persist_flag_info
         ));
+        assert!(storage_files.storage_record.local_overrides.exists());
     }
 
     #[test]
@@ -931,10 +1225,7 @@ mod tests {
         let container = ContainerMock::new();
         let root_dir = StorageRootDirMock::new();
         let storage_files = create_mock_storage_files(&container, &root_dir);
-        assert_eq!(
-            &storage_files.storage_record,
-            storage_files.storage_record()
-        );
+        assert_eq!(&storage_files.storage_record, storage_files.storage_record());
     }
 
     #[test]
@@ -964,9 +1255,7 @@ mod tests {
             value_type: FlagValueType::Boolean,
             flag_index: 0,
         };
-        let mut actual_context = storage_files
-            .get_package_flag_context("not_exist", "")
-            .unwrap();
+        let mut actual_context = storage_files.get_package_flag_context("not_exist", "").unwrap();
         assert_eq!(context, actual_context);
 
         context.package = String::from("com.android.aconfig.storage.test_1");
@@ -1005,9 +1294,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut storage_files = create_mock_storage_files(&container, &root_dir);
         assert!(!storage_files.has_package("not_exist").unwrap());
-        assert!(storage_files
-            .has_package("com.android.aconfig.storage.test_1")
-            .unwrap());
+        assert!(storage_files.has_package("com.android.aconfig.storage.test_1").unwrap());
     }
 
     #[test]
@@ -1053,20 +1340,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(&storage_files.get_server_flag_value(&context).unwrap(), "");
-        storage_files
-            .stage_server_override(&context, "false")
-            .unwrap();
-        assert_eq!(
-            &storage_files.get_server_flag_value(&context).unwrap(),
-            "false"
-        );
-        storage_files
-            .stage_server_override(&context, "true")
-            .unwrap();
-        assert_eq!(
-            &storage_files.get_server_flag_value(&context).unwrap(),
-            "true"
-        );
+        storage_files.stage_server_override(&context, "false").unwrap();
+        assert_eq!(&storage_files.get_server_flag_value(&context).unwrap(), "false");
+        storage_files.stage_server_override(&context, "true").unwrap();
+        assert_eq!(&storage_files.get_server_flag_value(&context).unwrap(), "true");
     }
 
     #[test]
@@ -1075,7 +1352,6 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut storage_files = create_mock_storage_files(&container, &root_dir);
         std::fs::copy(&container.flag_val, &root_dir.boot_dir.join("mockup.val")).unwrap();
-
         let mut context = storage_files
             .get_package_flag_context("com.android.aconfig.storage.test_1", "enabled_rw")
             .unwrap();
@@ -1083,10 +1359,7 @@ mod tests {
         context = storage_files
             .get_package_flag_context("com.android.aconfig.storage.test_2", "disabled_rw")
             .unwrap();
-        assert_eq!(
-            storage_files.get_boot_flag_value(&context).unwrap(),
-            "false"
-        );
+        assert_eq!(storage_files.get_boot_flag_value(&context).unwrap(), "false");
     }
 
     #[test]
@@ -1098,17 +1371,11 @@ mod tests {
         let mut context = storage_files
             .get_package_flag_context("com.android.aconfig.storage.test_1", "enabled_rw")
             .unwrap();
-        assert_eq!(
-            storage_files.get_default_flag_value(&context).unwrap(),
-            "true"
-        );
+        assert_eq!(storage_files.get_default_flag_value(&context).unwrap(), "true");
         context = storage_files
             .get_package_flag_context("com.android.aconfig.storage.test_2", "disabled_rw")
             .unwrap();
-        assert_eq!(
-            storage_files.get_default_flag_value(&context).unwrap(),
-            "false"
-        );
+        assert_eq!(storage_files.get_default_flag_value(&context).unwrap(), "false");
     }
 
     #[test]
@@ -1121,20 +1388,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(&storage_files.get_local_flag_value(&context).unwrap(), "");
-        storage_files
-            .stage_local_override(&context, "false")
-            .unwrap();
-        assert_eq!(
-            &storage_files.get_local_flag_value(&context).unwrap(),
-            "false"
-        );
-        storage_files
-            .stage_local_override(&context, "true")
-            .unwrap();
-        assert_eq!(
-            &storage_files.get_local_flag_value(&context).unwrap(),
-            "true"
-        );
+        storage_files.stage_local_override(&context, "false").unwrap();
+        assert_eq!(&storage_files.get_local_flag_value(&context).unwrap(), "false");
+        storage_files.stage_local_override(&context, "true").unwrap();
+        assert_eq!(&storage_files.get_local_flag_value(&context).unwrap(), "true");
     }
 
     #[test]
@@ -1145,13 +1402,8 @@ mod tests {
         let context = storage_files
             .get_package_flag_context("com.android.aconfig.storage.test_1", "enabled_rw")
             .unwrap();
-        storage_files
-            .stage_server_override(&context, "false")
-            .unwrap();
-        assert_eq!(
-            &storage_files.get_server_flag_value(&context).unwrap(),
-            "false"
-        );
+        storage_files.stage_server_override(&context, "false").unwrap();
+        assert_eq!(&storage_files.get_server_flag_value(&context).unwrap(), "false");
         let attribute = storage_files.get_flag_attribute(&context).unwrap();
         assert!(attribute & (FlagInfoBit::HasServerOverride as u8) != 0);
     }
@@ -1164,14 +1416,330 @@ mod tests {
         let context = storage_files
             .get_package_flag_context("com.android.aconfig.storage.test_1", "enabled_rw")
             .unwrap();
-        storage_files
-            .stage_local_override(&context, "false")
-            .unwrap();
-        assert_eq!(
-            &storage_files.get_local_flag_value(&context).unwrap(),
-            "false"
-        );
+        storage_files.stage_local_override(&context, "false").unwrap();
+        assert_eq!(&storage_files.get_local_flag_value(&context).unwrap(), "false");
         let attribute = storage_files.get_flag_attribute(&context).unwrap();
         assert!(attribute & (FlagInfoBit::HasLocalOverride as u8) != 0);
+    }
+
+    #[test]
+    fn test_get_all_server_overrides() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut storage_files = create_mock_storage_files(&container, &root_dir);
+        let mut context = storage_files
+            .get_package_flag_context("com.android.aconfig.storage.test_1", "enabled_rw")
+            .unwrap();
+        storage_files.stage_server_override(&context, "false").unwrap();
+        context = storage_files
+            .get_package_flag_context("com.android.aconfig.storage.test_2", "disabled_rw")
+            .unwrap();
+        storage_files.stage_server_override(&context, "true").unwrap();
+        let server_overrides = storage_files.get_all_server_overrides().unwrap();
+        assert_eq!(server_overrides.len(), 2);
+        assert_eq!(
+            server_overrides[0],
+            FlagValueSummary {
+                package_name: "com.android.aconfig.storage.test_1".to_string(),
+                flag_name: "enabled_rw".to_string(),
+                flag_value: "false".to_string(),
+                value_type: StoredFlagType::ReadWriteBoolean,
+            }
+        );
+        assert_eq!(
+            server_overrides[1],
+            FlagValueSummary {
+                package_name: "com.android.aconfig.storage.test_2".to_string(),
+                flag_name: "disabled_rw".to_string(),
+                flag_value: "true".to_string(),
+                value_type: StoredFlagType::ReadWriteBoolean,
+            }
+        );
+    }
+
+    #[test]
+    fn test_get_all_overrides() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut storage_files = create_mock_storage_files(&container, &root_dir);
+
+        let context_one = storage_files
+            .get_package_flag_context("com.android.aconfig.storage.test_1", "enabled_rw")
+            .unwrap();
+        storage_files.stage_local_override(&context_one, "false").unwrap();
+
+        let context_two = storage_files
+            .get_package_flag_context("com.android.aconfig.storage.test_2", "disabled_rw")
+            .unwrap();
+        storage_files.stage_local_override(&context_two, "false").unwrap();
+
+        let local_overrides = storage_files.get_all_local_overrides().unwrap();
+        assert_eq!(local_overrides.len(), 2);
+
+        let mut override_proto = ProtoFlagOverride::new();
+        override_proto.set_package_name("com.android.aconfig.storage.test_1".to_string());
+        override_proto.set_flag_name("enabled_rw".to_string());
+        override_proto.set_flag_value("false".to_string());
+        assert_eq!(local_overrides[0], override_proto);
+
+        override_proto.set_package_name("com.android.aconfig.storage.test_2".to_string());
+        override_proto.set_flag_name("disabled_rw".to_string());
+        assert_eq!(local_overrides[1], override_proto);
+    }
+
+    #[test]
+    fn test_remove_local_override() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut storage_files = create_mock_storage_files(&container, &root_dir);
+        let context = storage_files
+            .get_package_flag_context("com.android.aconfig.storage.test_1", "enabled_rw")
+            .unwrap();
+
+        assert!(storage_files.remove_local_override(&context).is_err());
+        storage_files.stage_local_override(&context, "false").unwrap();
+        storage_files.remove_local_override(&context).unwrap();
+        assert_eq!(&storage_files.get_local_flag_value(&context).unwrap(), "");
+        let attribute = storage_files.get_flag_attribute(&context).unwrap();
+        assert!(attribute & (FlagInfoBit::HasLocalOverride as u8) == 0);
+    }
+
+    #[test]
+    fn test_remove_all_local_overrides() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut storage_files = create_mock_storage_files(&container, &root_dir);
+
+        let context_one = storage_files
+            .get_package_flag_context("com.android.aconfig.storage.test_1", "enabled_rw")
+            .unwrap();
+        storage_files.stage_local_override(&context_one, "false").unwrap();
+
+        let context_two = storage_files
+            .get_package_flag_context("com.android.aconfig.storage.test_2", "disabled_rw")
+            .unwrap();
+        storage_files.stage_local_override(&context_two, "false").unwrap();
+
+        let mut pb = read_pb_from_file::<ProtoLocalFlagOverrides>(
+            &storage_files.storage_record.local_overrides,
+        )
+        .unwrap();
+        assert_eq!(pb.overrides.len(), 2);
+
+        storage_files.remove_all_local_overrides().unwrap();
+
+        assert_eq!(&storage_files.get_local_flag_value(&context_one).unwrap(), "");
+        let mut attribute = storage_files.get_flag_attribute(&context_one).unwrap();
+        assert!(attribute & (FlagInfoBit::HasLocalOverride as u8) == 0);
+
+        assert_eq!(&storage_files.get_local_flag_value(&context_two).unwrap(), "");
+        attribute = storage_files.get_flag_attribute(&context_one).unwrap();
+        assert!(attribute & (FlagInfoBit::HasLocalOverride as u8) == 0);
+
+        pb = read_pb_from_file::<ProtoLocalFlagOverrides>(
+            &storage_files.storage_record.local_overrides,
+        )
+        .unwrap();
+        assert_eq!(pb.overrides.len(), 0);
+    }
+
+    #[test]
+    fn test_remove_persist_files() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut storage_files = create_mock_storage_files(&container, &root_dir);
+        write_pb_to_file::<ProtoLocalFlagOverrides>(
+            &ProtoLocalFlagOverrides::new(),
+            &storage_files.storage_record.local_overrides,
+        )
+        .unwrap();
+        assert!(storage_files.storage_record.persist_package_map.exists());
+        assert!(storage_files.storage_record.persist_flag_map.exists());
+        assert!(storage_files.storage_record.persist_flag_val.exists());
+        assert!(storage_files.storage_record.persist_flag_info.exists());
+        assert!(storage_files.storage_record.local_overrides.exists());
+
+        storage_files.remove_persist_files().unwrap();
+        assert!(!storage_files.storage_record.persist_package_map.exists());
+        assert!(!storage_files.storage_record.persist_flag_map.exists());
+        assert!(!storage_files.storage_record.persist_flag_val.exists());
+        assert!(!storage_files.storage_record.persist_flag_info.exists());
+        assert!(!storage_files.storage_record.local_overrides.exists());
+    }
+
+    #[test]
+    fn test_create_boot_storage_files() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut storage_files = create_mock_storage_files(&container, &root_dir);
+
+        let context_one = storage_files
+            .get_package_flag_context("com.android.aconfig.storage.test_1", "enabled_rw")
+            .unwrap();
+        storage_files.stage_server_override(&context_one, "false").unwrap();
+
+        let context_two = storage_files
+            .get_package_flag_context("com.android.aconfig.storage.test_2", "disabled_rw")
+            .unwrap();
+        storage_files.stage_server_override(&context_two, "false").unwrap();
+        storage_files.stage_local_override(&context_two, "true").unwrap();
+
+        storage_files.create_boot_storage_files().unwrap();
+
+        assert!(storage_files.storage_record.boot_flag_val.exists());
+        assert!(storage_files.storage_record.boot_flag_info.exists());
+
+        assert_eq!(storage_files.get_boot_flag_value(&context_one).unwrap(), "false");
+        assert_eq!(storage_files.get_boot_flag_value(&context_two).unwrap(), "true");
+    }
+
+    #[test]
+    fn test_get_flag_snapshot() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut storage_files = create_mock_storage_files(&container, &root_dir);
+
+        let mut flag = storage_files
+            .get_flag_snapshot("com.android.aconfig.storage.test_1", "not_exist")
+            .unwrap();
+        assert_eq!(flag, None);
+
+        let context = storage_files
+            .get_package_flag_context("com.android.aconfig.storage.test_1", "disabled_rw")
+            .unwrap();
+        storage_files.stage_server_override(&context, "false").unwrap();
+        storage_files.stage_local_override(&context, "true").unwrap();
+        storage_files.create_boot_storage_files().unwrap();
+
+        flag = storage_files
+            .get_flag_snapshot("com.android.aconfig.storage.test_1", "disabled_rw")
+            .unwrap();
+
+        let expected_flag = FlagSnapshot {
+            container: String::from("mockup"),
+            package: String::from("com.android.aconfig.storage.test_1"),
+            flag: String::from("disabled_rw"),
+            server_value: String::from("false"),
+            local_value: String::from("true"),
+            boot_value: String::from("true"),
+            default_value: String::from("false"),
+            is_readwrite: true,
+            has_server_override: true,
+            has_local_override: true,
+        };
+
+        assert_eq!(flag, Some(expected_flag));
+    }
+
+    #[test]
+    fn test_list_flags_in_package() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut storage_files = create_mock_storage_files(&container, &root_dir);
+
+        let context_one = storage_files
+            .get_package_flag_context("com.android.aconfig.storage.test_1", "enabled_rw")
+            .unwrap();
+        storage_files.stage_server_override(&context_one, "false").unwrap();
+        let context_two = storage_files
+            .get_package_flag_context("com.android.aconfig.storage.test_1", "disabled_rw")
+            .unwrap();
+        storage_files.stage_server_override(&context_two, "false").unwrap();
+        storage_files.stage_local_override(&context_two, "true").unwrap();
+        storage_files.create_boot_storage_files().unwrap();
+
+        let flags =
+            storage_files.list_flags_in_package("com.android.aconfig.storage.test_1").unwrap();
+
+        let mut flag = FlagSnapshot {
+            container: String::from("mockup"),
+            package: String::from("com.android.aconfig.storage.test_1"),
+            flag: String::from("disabled_rw"),
+            server_value: String::from("false"),
+            local_value: String::from("true"),
+            boot_value: String::from("true"),
+            default_value: String::from("false"),
+            is_readwrite: true,
+            has_server_override: true,
+            has_local_override: true,
+        };
+        assert_eq!(flags[0], flag);
+
+        flag = FlagSnapshot {
+            container: String::from("mockup"),
+            package: String::from("com.android.aconfig.storage.test_1"),
+            flag: String::from("enabled_ro"),
+            server_value: String::new(),
+            local_value: String::new(),
+            boot_value: String::from("true"),
+            default_value: String::from("true"),
+            is_readwrite: false,
+            has_server_override: false,
+            has_local_override: false,
+        };
+        assert_eq!(flags[1], flag);
+
+        flag = FlagSnapshot {
+            container: String::from("mockup"),
+            package: String::from("com.android.aconfig.storage.test_1"),
+            flag: String::from("enabled_rw"),
+            server_value: String::from("false"),
+            local_value: String::new(),
+            boot_value: String::from("false"),
+            default_value: String::from("true"),
+            is_readwrite: true,
+            has_server_override: true,
+            has_local_override: false,
+        };
+        assert_eq!(flags[2], flag);
+    }
+
+    #[test]
+    fn test_list_all_flags() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut storage_files = create_mock_storage_files(&container, &root_dir);
+
+        let context_one = storage_files
+            .get_package_flag_context("com.android.aconfig.storage.test_1", "enabled_rw")
+            .unwrap();
+        storage_files.stage_server_override(&context_one, "false").unwrap();
+        let context_two = storage_files
+            .get_package_flag_context("com.android.aconfig.storage.test_2", "disabled_rw")
+            .unwrap();
+        storage_files.stage_server_override(&context_two, "false").unwrap();
+        storage_files.stage_local_override(&context_two, "true").unwrap();
+        storage_files.create_boot_storage_files().unwrap();
+
+        let flags = storage_files.list_all_flags().unwrap();
+        assert_eq!(flags.len(), 8);
+
+        let mut flag = FlagSnapshot {
+            container: String::from("mockup"),
+            package: String::from("com.android.aconfig.storage.test_1"),
+            flag: String::from("enabled_rw"),
+            server_value: String::from("false"),
+            local_value: String::new(),
+            boot_value: String::from("false"),
+            default_value: String::from("true"),
+            is_readwrite: true,
+            has_server_override: true,
+            has_local_override: false,
+        };
+        assert_eq!(flags[2], flag);
+
+        flag = FlagSnapshot {
+            container: String::from("mockup"),
+            package: String::from("com.android.aconfig.storage.test_2"),
+            flag: String::from("disabled_rw"),
+            server_value: String::from("false"),
+            local_value: String::from("true"),
+            boot_value: String::from("true"),
+            default_value: String::from("false"),
+            is_readwrite: true,
+            has_server_override: true,
+            has_local_override: true,
+        };
+        assert_eq!(flags[3], flag);
     }
 }
