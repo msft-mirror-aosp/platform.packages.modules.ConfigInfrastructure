@@ -47,8 +47,10 @@ public final class StageOtaFlags {
   private static final String STORAGE_MARKER_FILE_PATH
         = "/metadata/aconfig/boot/enable_only_new_storage";
 
-  private static final int STATUS_STORAGE_NOT_ENABLED = -1;
-  private static final int STATUS_STAGE_SUCCESS = 0;
+  /** Aconfig storage is disabled and unavailable for writes. @hide */
+  @SystemApi public static final int STATUS_STORAGE_NOT_ENABLED = -1;
+  /** Stage request was successful. @hide */
+  @SystemApi public static final int STATUS_STAGE_SUCCESS = 0;
 
   /** @hide */
   @IntDef(prefix = { "STATUS_" }, value = {
