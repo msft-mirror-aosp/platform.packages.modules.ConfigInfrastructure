@@ -1,0 +1,4 @@
+# Policy file for ravenwood
+
+# These classes are included from external libraries statically
+class android.provider.internal.modules.utils.build.SdkLevel keepclass

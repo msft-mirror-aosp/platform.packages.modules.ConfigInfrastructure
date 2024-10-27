@@ -37,6 +37,7 @@ java_sdk_library {
     sdk_version: "module_current",
     impl_library_visibility: [
         "//packages/modules/ConfigInfrastructure:__subpackages__",
+        "//frameworks/base/ravenwood",
     ],
     static_libs: [
         "configinfra_framework_flags_java_lib",
@@ -50,6 +51,14 @@ java_sdk_library {
     lint: {
         baseline_filename: "lint-baseline.xml",
     },
+}
+
+filegroup {
+    name: "framework-configinfrastructure-ravenwood-policies",
+    srcs: [
+        "framework-configinfrastructure-ravenwood-policies.txt",
+    ],
+    visibility: ["//frameworks/base/ravenwood"],
 }
 
 aconfig_declarations {
