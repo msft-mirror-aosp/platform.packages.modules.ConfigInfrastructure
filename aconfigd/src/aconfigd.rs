@@ -104,9 +104,9 @@ impl Aconfigd {
             let default_flag_info = etc_dir.join("flag.info");
 
             if !default_package_map.exists()
+                || !default_flag_val.exists()
+                || !default_flag_val.exists()
                 || !default_flag_map.exists()
-                || !default_flag_val.exists()
-                || !default_flag_val.exists()
             {
                 continue;
             }
@@ -163,7 +163,7 @@ impl Aconfigd {
         &mut self,
         request_pb: &ProtoOTAFlagStagingMessage,
     ) -> Result<ProtoStorageReturnMessage, AconfigdError> {
-        let ota_flags_pb_file = self.root_dir.join("flags").join("ota");
+        let ota_flags_pb_file = self.root_dir.join("flags").join("ota.pb");
         write_pb_to_file::<ProtoOTAFlagStagingMessage>(request_pb, &ota_flags_pb_file)?;
         let mut return_pb = ProtoStorageReturnMessage::new();
         return_pb.mut_ota_staging_message();
@@ -322,10 +322,25 @@ mod tests {
     use super::*;
     use crate::test_utils::{has_same_content, ContainerMock, StorageRootDirMock};
     use crate::utils::read_pb_from_file;
-    use aconfigd_protos::ProtoPersistStorageRecord;
+    use aconfigd_protos::{
+        ProtoFlagOverride, ProtoFlagOverrideType, ProtoLocalFlagOverrides,
+        ProtoPersistStorageRecord,
+    };
 
     fn create_mock_aconfigd(root_dir: &StorageRootDirMock) -> Aconfigd {
         Aconfigd::new(root_dir.tmp_dir.path(), &root_dir.flags_dir.join("storage_records.pb"))
+    }
+
+    fn add_mockup_container_storage(container: &ContainerMock, aconfigd: &mut Aconfigd) {
+        let mut request = ProtoStorageRequestMessage::new();
+        let actual_request = request.mut_new_storage_message();
+        actual_request.set_container("mockup".to_string());
+        actual_request.set_package_map(container.package_map.display().to_string());
+        actual_request.set_flag_map(container.flag_map.display().to_string());
+        actual_request.set_flag_value(container.flag_val.display().to_string());
+        actual_request.set_flag_info(container.flag_info.display().to_string());
+        let return_msg = aconfigd.handle_socket_request(&request);
+        assert!(return_msg.is_ok());
     }
 
     #[test]
@@ -333,17 +348,7 @@ mod tests {
         let container = ContainerMock::new();
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
-        let mut request = ProtoStorageRequestMessage::new();
-
-        let actual_request = request.mut_new_storage_message();
-        actual_request.set_container("mockup".to_string());
-        actual_request.set_package_map(container.package_map.display().to_string());
-        actual_request.set_flag_map(container.flag_map.display().to_string());
-        actual_request.set_flag_value(container.flag_val.display().to_string());
-        actual_request.set_flag_info(container.flag_info.display().to_string());
-
-        let return_msg = aconfigd.handle_socket_request(&request);
-        assert!(return_msg.is_ok());
+        add_mockup_container_storage(&container, &mut aconfigd);
 
         let persist_package_map = root_dir.maps_dir.join("mockup.package.map");
         assert!(persist_package_map.exists());
@@ -364,9 +369,8 @@ mod tests {
         assert!(boot_flag_info.exists());
         assert!(has_same_content(&container.flag_info, &boot_flag_info));
 
-        let pb =
-            read_pb_from_file::<ProtoPersistStorageRecords>(&aconfigd.persist_storage_records)
-                .unwrap();
+        let pb = read_pb_from_file::<ProtoPersistStorageRecords>(&aconfigd.persist_storage_records)
+            .unwrap();
         assert_eq!(pb.records.len(), 1);
         let mut entry = ProtoPersistStorageRecord::new();
         entry.set_version(1);
@@ -377,5 +381,494 @@ mod tests {
         entry.set_flag_info(container.flag_info.display().to_string());
         entry.set_digest(String::new());
         assert_eq!(pb.records[0], entry);
+    }
+
+    fn get_flag_snapshot(
+        aconfigd: &mut Aconfigd,
+        package: &str,
+        flag: &str,
+    ) -> ProtoFlagQueryReturnMessage {
+        let mut request = ProtoStorageRequestMessage::new();
+        let actual_request = request.mut_flag_query_message();
+        actual_request.set_package_name(package.to_string());
+        actual_request.set_flag_name(flag.to_string());
+        let return_msg = aconfigd.handle_socket_request(&request);
+        assert!(return_msg.is_ok());
+        return_msg.unwrap().flag_query_message().clone()
+    }
+
+    #[test]
+    fn test_server_on_boot_flag_override_request() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut aconfigd = create_mock_aconfigd(&root_dir);
+        add_mockup_container_storage(&container, &mut aconfigd);
+        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+
+        let mut request = ProtoStorageRequestMessage::new();
+        let actual_request = request.mut_flag_override_message();
+        actual_request.set_package_name("com.android.aconfig.storage.test_1".to_string());
+        actual_request.set_flag_name("enabled_rw".to_string());
+        actual_request.set_flag_value("false".to_string());
+        actual_request.set_override_type(ProtoFlagOverrideType::SERVER_ON_REBOOT);
+        let return_msg = aconfigd.handle_socket_request(&request);
+        assert!(return_msg.is_ok());
+
+        let flag =
+            get_flag_snapshot(&mut aconfigd, "com.android.aconfig.storage.test_1", "enabled_rw");
+        assert_eq!(flag.server_flag_value(), "false");
+        assert_eq!(flag.boot_flag_value(), "true");
+        assert_eq!(flag.local_flag_value(), "");
+        assert_eq!(flag.has_server_override(), true);
+        assert_eq!(flag.has_local_override(), false);
+    }
+
+    #[test]
+    fn test_local_on_boot_flag_override_request() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut aconfigd = create_mock_aconfigd(&root_dir);
+        add_mockup_container_storage(&container, &mut aconfigd);
+        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+
+        let mut request = ProtoStorageRequestMessage::new();
+        let actual_request = request.mut_flag_override_message();
+        actual_request.set_package_name("com.android.aconfig.storage.test_1".to_string());
+        actual_request.set_flag_name("enabled_rw".to_string());
+        actual_request.set_flag_value("false".to_string());
+        actual_request.set_override_type(ProtoFlagOverrideType::LOCAL_ON_REBOOT);
+        let return_msg = aconfigd.handle_socket_request(&request);
+        assert!(return_msg.is_ok());
+
+        let flag =
+            get_flag_snapshot(&mut aconfigd, "com.android.aconfig.storage.test_1", "enabled_rw");
+        assert_eq!(flag.server_flag_value(), "");
+        assert_eq!(flag.boot_flag_value(), "true");
+        assert_eq!(flag.local_flag_value(), "false");
+        assert_eq!(flag.has_server_override(), false);
+        assert_eq!(flag.has_local_override(), true);
+    }
+
+    #[test]
+    fn test_local_immediate_flag_override_request() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut aconfigd = create_mock_aconfigd(&root_dir);
+        add_mockup_container_storage(&container, &mut aconfigd);
+        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+
+        let mut request = ProtoStorageRequestMessage::new();
+        let actual_request = request.mut_flag_override_message();
+        actual_request.set_package_name("com.android.aconfig.storage.test_1".to_string());
+        actual_request.set_flag_name("enabled_rw".to_string());
+        actual_request.set_flag_value("false".to_string());
+        actual_request.set_override_type(ProtoFlagOverrideType::LOCAL_IMMEDIATE);
+        let return_msg = aconfigd.handle_socket_request(&request);
+        assert!(return_msg.is_ok());
+
+        let flag =
+            get_flag_snapshot(&mut aconfigd, "com.android.aconfig.storage.test_1", "enabled_rw");
+        assert_eq!(flag.server_flag_value(), "");
+        assert_eq!(flag.boot_flag_value(), "false");
+        assert_eq!(flag.local_flag_value(), "false");
+        assert_eq!(flag.has_server_override(), false);
+        assert_eq!(flag.has_local_override(), true);
+    }
+
+    #[test]
+    fn test_negative_flag_override_request() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut aconfigd = create_mock_aconfigd(&root_dir);
+        add_mockup_container_storage(&container, &mut aconfigd);
+        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+
+        let mut request = ProtoStorageRequestMessage::new();
+        let actual_request = request.mut_flag_override_message();
+        actual_request.set_package_name("not_exist".to_string());
+        actual_request.set_flag_name("not_exist".to_string());
+        actual_request.set_flag_value("false".to_string());
+        let return_msg = aconfigd.handle_socket_request(&request);
+        assert!(return_msg.is_err());
+        if let Err(errmsg) = return_msg {
+            assert_eq!("cannot find container", format!("{}", errmsg));
+        }
+    }
+
+    #[test]
+    fn test_ota_flag_staging_request() {
+        let root_dir = StorageRootDirMock::new();
+        let mut aconfigd = create_mock_aconfigd(&root_dir);
+
+        let mut request = ProtoStorageRequestMessage::new();
+        let actual_request = request.mut_ota_staging_message();
+        actual_request.set_build_id("xyz.123".to_string());
+        let mut flag1 = ProtoFlagOverride::new();
+        flag1.set_package_name("package_foo".to_string());
+        flag1.set_flag_name("flag_foo".to_string());
+        flag1.set_flag_value("false".to_string());
+        actual_request.overrides.push(flag1.clone());
+        let mut flag2 = ProtoFlagOverride::new();
+        flag2.set_package_name("package_bar".to_string());
+        flag2.set_flag_name("flag_bar".to_string());
+        flag2.set_flag_value("true".to_string());
+        actual_request.overrides.push(flag2.clone());
+        let return_msg = aconfigd.handle_socket_request(&request);
+        assert!(return_msg.is_ok());
+
+        let ota_pb_file = root_dir.flags_dir.join("ota.pb");
+        assert!(ota_pb_file.exists());
+        let ota_flags = read_pb_from_file::<ProtoOTAFlagStagingMessage>(&ota_pb_file).unwrap();
+        assert_eq!(ota_flags.build_id(), "xyz.123");
+        assert_eq!(ota_flags.overrides.len(), 2);
+        assert_eq!(ota_flags.overrides[0], flag1);
+        assert_eq!(ota_flags.overrides[1], flag2);
+    }
+
+    #[test]
+    fn test_flag_querry_request() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut aconfigd = create_mock_aconfigd(&root_dir);
+        add_mockup_container_storage(&container, &mut aconfigd);
+        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+
+        let mut flag =
+            get_flag_snapshot(&mut aconfigd, "com.android.aconfig.storage.test_1", "enabled_rw");
+        assert_eq!(flag.container(), "mockup");
+        assert_eq!(flag.package_name(), "com.android.aconfig.storage.test_1");
+        assert_eq!(flag.flag_name(), "enabled_rw");
+        assert_eq!(flag.server_flag_value(), "");
+        assert_eq!(flag.boot_flag_value(), "true");
+        assert_eq!(flag.local_flag_value(), "");
+        assert_eq!(flag.default_flag_value(), "true");
+        assert_eq!(flag.is_readwrite(), true);
+        assert_eq!(flag.has_server_override(), false);
+        assert_eq!(flag.has_local_override(), false);
+
+        let mut request = ProtoStorageRequestMessage::new();
+        let mut actual_request = request.mut_flag_override_message();
+        actual_request.set_package_name("com.android.aconfig.storage.test_1".to_string());
+        actual_request.set_flag_name("enabled_rw".to_string());
+        actual_request.set_flag_value("false".to_string());
+        actual_request.set_override_type(ProtoFlagOverrideType::SERVER_ON_REBOOT);
+        let mut return_msg = aconfigd.handle_socket_request(&request);
+        assert!(return_msg.is_ok());
+
+        flag = get_flag_snapshot(&mut aconfigd, "com.android.aconfig.storage.test_1", "enabled_rw");
+        assert_eq!(flag.container(), "mockup");
+        assert_eq!(flag.package_name(), "com.android.aconfig.storage.test_1");
+        assert_eq!(flag.flag_name(), "enabled_rw");
+        assert_eq!(flag.server_flag_value(), "false");
+        assert_eq!(flag.boot_flag_value(), "true");
+        assert_eq!(flag.local_flag_value(), "");
+        assert_eq!(flag.default_flag_value(), "true");
+        assert_eq!(flag.is_readwrite(), true);
+        assert_eq!(flag.has_server_override(), true);
+        assert_eq!(flag.has_local_override(), false);
+
+        request = ProtoStorageRequestMessage::new();
+        actual_request = request.mut_flag_override_message();
+        actual_request.set_package_name("com.android.aconfig.storage.test_1".to_string());
+        actual_request.set_flag_name("enabled_rw".to_string());
+        actual_request.set_flag_value("false".to_string());
+        actual_request.set_override_type(ProtoFlagOverrideType::LOCAL_IMMEDIATE);
+        return_msg = aconfigd.handle_socket_request(&request);
+        assert!(return_msg.is_ok());
+
+        flag = get_flag_snapshot(&mut aconfigd, "com.android.aconfig.storage.test_1", "enabled_rw");
+        assert_eq!(flag.container(), "mockup");
+        assert_eq!(flag.package_name(), "com.android.aconfig.storage.test_1");
+        assert_eq!(flag.flag_name(), "enabled_rw");
+        assert_eq!(flag.server_flag_value(), "false");
+        assert_eq!(flag.boot_flag_value(), "false");
+        assert_eq!(flag.local_flag_value(), "false");
+        assert_eq!(flag.default_flag_value(), "true");
+        assert_eq!(flag.is_readwrite(), true);
+        assert_eq!(flag.has_server_override(), true);
+        assert_eq!(flag.has_local_override(), true);
+    }
+
+    #[test]
+    fn test_negative_flag_querry_request() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut aconfigd = create_mock_aconfigd(&root_dir);
+        add_mockup_container_storage(&container, &mut aconfigd);
+        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+
+        let mut request = ProtoStorageRequestMessage::new();
+        let actual_request = request.mut_flag_query_message();
+        actual_request.set_package_name("not_exist".to_string());
+        actual_request.set_flag_name("not_exist".to_string());
+        let return_msg = aconfigd.handle_socket_request(&request);
+        assert!(return_msg.is_err());
+        if let Err(errmsg) = return_msg {
+            assert_eq!("flag does not exist", format!("{}", errmsg));
+        }
+    }
+
+    #[test]
+    fn test_remove_single_local_override_request() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut aconfigd = create_mock_aconfigd(&root_dir);
+        add_mockup_container_storage(&container, &mut aconfigd);
+        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+
+        let mut request = ProtoStorageRequestMessage::new();
+        let actual_request = request.mut_flag_override_message();
+        actual_request.set_package_name("com.android.aconfig.storage.test_1".to_string());
+        actual_request.set_flag_name("enabled_rw".to_string());
+        actual_request.set_flag_value("false".to_string());
+        actual_request.set_override_type(ProtoFlagOverrideType::LOCAL_ON_REBOOT);
+        let return_msg = aconfigd.handle_socket_request(&request);
+        assert!(return_msg.is_ok());
+
+        request = ProtoStorageRequestMessage::new();
+        let actual_request = request.mut_flag_override_message();
+        actual_request.set_package_name("com.android.aconfig.storage.test_1".to_string());
+        actual_request.set_flag_name("disabled_rw".to_string());
+        actual_request.set_flag_value("true".to_string());
+        actual_request.set_override_type(ProtoFlagOverrideType::LOCAL_ON_REBOOT);
+        let return_msg = aconfigd.handle_socket_request(&request);
+        assert!(return_msg.is_ok());
+
+        request = ProtoStorageRequestMessage::new();
+        let actual_request = request.mut_remove_local_override_message();
+        actual_request.set_remove_all(false);
+        actual_request.set_package_name("com.android.aconfig.storage.test_1".to_string());
+        actual_request.set_flag_name("enabled_rw".to_string());
+        let return_msg = aconfigd.handle_socket_request(&request);
+        assert!(return_msg.is_ok());
+
+        let flag =
+            get_flag_snapshot(&mut aconfigd, "com.android.aconfig.storage.test_1", "enabled_rw");
+        assert_eq!(flag.local_flag_value(), "");
+        assert_eq!(flag.has_local_override(), false);
+
+        let flag =
+            get_flag_snapshot(&mut aconfigd, "com.android.aconfig.storage.test_1", "disabled_rw");
+        assert_eq!(flag.local_flag_value(), "true");
+        assert_eq!(flag.has_local_override(), true);
+    }
+
+    #[test]
+    fn test_remove_all_local_override_request() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut aconfigd = create_mock_aconfigd(&root_dir);
+        add_mockup_container_storage(&container, &mut aconfigd);
+        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+
+        let mut request = ProtoStorageRequestMessage::new();
+        let actual_request = request.mut_flag_override_message();
+        actual_request.set_package_name("com.android.aconfig.storage.test_1".to_string());
+        actual_request.set_flag_name("enabled_rw".to_string());
+        actual_request.set_flag_value("false".to_string());
+        actual_request.set_override_type(ProtoFlagOverrideType::LOCAL_ON_REBOOT);
+        let return_msg = aconfigd.handle_socket_request(&request);
+        assert!(return_msg.is_ok());
+
+        request = ProtoStorageRequestMessage::new();
+        let actual_request = request.mut_flag_override_message();
+        actual_request.set_package_name("com.android.aconfig.storage.test_1".to_string());
+        actual_request.set_flag_name("disabled_rw".to_string());
+        actual_request.set_flag_value("true".to_string());
+        actual_request.set_override_type(ProtoFlagOverrideType::LOCAL_ON_REBOOT);
+        let return_msg = aconfigd.handle_socket_request(&request);
+        assert!(return_msg.is_ok());
+
+        request = ProtoStorageRequestMessage::new();
+        let actual_request = request.mut_remove_local_override_message();
+        actual_request.set_remove_all(true);
+        actual_request.set_package_name("abc".to_string());
+        actual_request.set_flag_name("def".to_string());
+        let return_msg = aconfigd.handle_socket_request(&request);
+        assert!(return_msg.is_ok());
+
+        let flag =
+            get_flag_snapshot(&mut aconfigd, "com.android.aconfig.storage.test_1", "enabled_rw");
+        assert_eq!(flag.local_flag_value(), "");
+        assert_eq!(flag.has_local_override(), false);
+
+        let flag =
+            get_flag_snapshot(&mut aconfigd, "com.android.aconfig.storage.test_1", "disabled_rw");
+        assert_eq!(flag.local_flag_value(), "");
+        assert_eq!(flag.has_local_override(), false);
+
+        let local_pb_file = root_dir.flags_dir.join("mockup_local_overrides.pb");
+        let pb = read_pb_from_file::<ProtoLocalFlagOverrides>(&local_pb_file).unwrap();
+        assert_eq!(pb.overrides.len(), 0);
+    }
+
+    #[test]
+    fn test_negative_remove_local_override_request() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut aconfigd = create_mock_aconfigd(&root_dir);
+        add_mockup_container_storage(&container, &mut aconfigd);
+        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+
+        let mut request = ProtoStorageRequestMessage::new();
+        let actual_request = request.mut_flag_override_message();
+        actual_request.set_package_name("com.android.aconfig.storage.test_1".to_string());
+        actual_request.set_flag_name("enabled_rw".to_string());
+        actual_request.set_flag_value("false".to_string());
+        actual_request.set_override_type(ProtoFlagOverrideType::LOCAL_ON_REBOOT);
+        let return_msg = aconfigd.handle_socket_request(&request);
+        assert!(return_msg.is_ok());
+
+        request = ProtoStorageRequestMessage::new();
+        let actual_request = request.mut_remove_local_override_message();
+        actual_request.set_remove_all(false);
+        actual_request.set_package_name("abc".to_string());
+        actual_request.set_flag_name("def".to_string());
+        let return_msg = aconfigd.handle_socket_request(&request);
+        assert!(return_msg.is_err());
+        if let Err(errmsg) = return_msg {
+            assert_eq!("cannot find container", format!("{}", errmsg));
+        }
+    }
+
+    #[test]
+    fn test_reset_storage_request() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut aconfigd = create_mock_aconfigd(&root_dir);
+        add_mockup_container_storage(&container, &mut aconfigd);
+        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+
+        let mut request = ProtoStorageRequestMessage::new();
+        let actual_request = request.mut_flag_override_message();
+        actual_request.set_package_name("com.android.aconfig.storage.test_1".to_string());
+        actual_request.set_flag_name("enabled_rw".to_string());
+        actual_request.set_flag_value("false".to_string());
+        actual_request.set_override_type(ProtoFlagOverrideType::SERVER_ON_REBOOT);
+        let return_msg = aconfigd.handle_socket_request(&request);
+        assert!(return_msg.is_ok());
+
+        request = ProtoStorageRequestMessage::new();
+        let actual_request = request.mut_flag_override_message();
+        actual_request.set_package_name("com.android.aconfig.storage.test_1".to_string());
+        actual_request.set_flag_name("disabled_rw".to_string());
+        actual_request.set_flag_value("true".to_string());
+        actual_request.set_override_type(ProtoFlagOverrideType::LOCAL_ON_REBOOT);
+        let return_msg = aconfigd.handle_socket_request(&request);
+        assert!(return_msg.is_ok());
+
+        let mut request = ProtoStorageRequestMessage::new();
+        let _actual_request = request.mut_reset_storage_message();
+        let return_msg = aconfigd.handle_socket_request(&request);
+        assert!(return_msg.is_ok());
+
+        let mut flag =
+            get_flag_snapshot(&mut aconfigd, "com.android.aconfig.storage.test_1", "enabled_rw");
+        assert_eq!(flag.server_flag_value(), "");
+        assert_eq!(flag.local_flag_value(), "");
+        assert_eq!(flag.has_server_override(), false);
+        assert_eq!(flag.has_local_override(), false);
+
+        flag =
+            get_flag_snapshot(&mut aconfigd, "com.android.aconfig.storage.test_1", "disabled_rw");
+        assert_eq!(flag.server_flag_value(), "");
+        assert_eq!(flag.local_flag_value(), "");
+        assert_eq!(flag.has_server_override(), false);
+        assert_eq!(flag.has_local_override(), false);
+    }
+
+    #[test]
+    fn test_list_package_request() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut aconfigd = create_mock_aconfigd(&root_dir);
+        add_mockup_container_storage(&container, &mut aconfigd);
+        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+
+        let mut request = ProtoStorageRequestMessage::new();
+        let actual_request = request.mut_list_storage_message();
+        actual_request.set_package_name("com.android.aconfig.storage.test_1".to_string());
+        let return_msg = aconfigd.handle_socket_request(&request);
+        assert!(return_msg.is_ok());
+
+        let flags = return_msg.unwrap().list_storage_message().clone();
+        assert_eq!(flags.flags.len(), 3);
+
+        let mut flag = ProtoFlagQueryReturnMessage::new();
+        flag.set_container("mockup".to_string());
+        flag.set_package_name("com.android.aconfig.storage.test_1".to_string());
+        flag.set_flag_name("disabled_rw".to_string());
+        flag.set_server_flag_value("".to_string());
+        flag.set_local_flag_value("".to_string());
+        flag.set_boot_flag_value("false".to_string());
+        flag.set_default_flag_value("false".to_string());
+        flag.set_is_readwrite(true);
+        flag.set_has_server_override(false);
+        flag.set_has_local_override(false);
+        assert_eq!(flags.flags[0], flag);
+
+        flag.set_flag_name("enabled_ro".to_string());
+        flag.set_boot_flag_value("true".to_string());
+        flag.set_default_flag_value("true".to_string());
+        flag.set_is_readwrite(false);
+        assert_eq!(flags.flags[1], flag);
+
+        flag.set_flag_name("enabled_rw".to_string());
+        flag.set_is_readwrite(true);
+        assert_eq!(flags.flags[2], flag);
+    }
+
+    #[test]
+    fn test_negative_list_package_request() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut aconfigd = create_mock_aconfigd(&root_dir);
+        add_mockup_container_storage(&container, &mut aconfigd);
+        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+
+        let mut request = ProtoStorageRequestMessage::new();
+        let actual_request = request.mut_list_storage_message();
+        actual_request.set_package_name("not_exist".to_string());
+        let return_msg = aconfigd.handle_socket_request(&request);
+        assert!(return_msg.is_err());
+        if let Err(errmsg) = return_msg {
+            assert_eq!("cannot find container", format!("{}", errmsg));
+        }
+    }
+
+    #[test]
+    fn test_list_container_request() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut aconfigd = create_mock_aconfigd(&root_dir);
+        add_mockup_container_storage(&container, &mut aconfigd);
+        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+
+        let mut request = ProtoStorageRequestMessage::new();
+        let actual_request = request.mut_list_storage_message();
+        actual_request.set_container("mockup".to_string());
+        let return_msg = aconfigd.handle_socket_request(&request);
+        assert!(return_msg.is_ok());
+
+        let flags = return_msg.unwrap().list_storage_message().clone();
+        assert_eq!(flags.flags.len(), 8);
+    }
+
+    #[test]
+    fn test_negative_list_container_request() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut aconfigd = create_mock_aconfigd(&root_dir);
+        add_mockup_container_storage(&container, &mut aconfigd);
+        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+
+        let mut request = ProtoStorageRequestMessage::new();
+        let actual_request = request.mut_list_storage_message();
+        actual_request.set_container("not_exist".to_string());
+        let return_msg = aconfigd.handle_socket_request(&request);
+        assert!(return_msg.is_err());
+        if let Err(errmsg) = return_msg {
+            assert_eq!("cannot find container", format!("{}", errmsg));
+        }
     }
 }

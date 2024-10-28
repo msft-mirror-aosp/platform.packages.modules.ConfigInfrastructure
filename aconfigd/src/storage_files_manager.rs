@@ -256,16 +256,14 @@ impl StorageFilesManager {
         value: &str,
         override_type: ProtoFlagOverrideType,
     ) -> Result<(), AconfigdError> {
-        let container = self.get_container(package)?.ok_or(AconfigdError::FailToOverride(
+        let container = self.get_container(package)?.ok_or(AconfigdError::FailToFindContainer(
             anyhow!("Failed to find container for flag {}.{}", package, flag),
         ))?;
 
         let storage_files =
-            self.get_storage_files(&container).ok_or(AconfigdError::FailToOverride(anyhow!(
-                "Failed to find container for flag {}.{}",
-                package,
-                flag
-            )))?;
+            self.get_storage_files(&container).ok_or(AconfigdError::FailToFindContainer(
+                anyhow!("Failed to find container for flag {}.{}", package, flag),
+            ))?;
 
         let context = storage_files.get_package_flag_context(package, flag)?;
         match override_type {
@@ -336,12 +334,12 @@ impl StorageFilesManager {
         package: &str,
         flag: &str,
     ) -> Result<(), AconfigdError> {
-        let container = self.get_container(package)?.ok_or(AconfigdError::FailToOverride(
+        let container = self.get_container(package)?.ok_or(AconfigdError::FailToFindContainer(
             anyhow!("Failed to find container for flag {}.{}", package, flag),
         ))?;
 
         let storage_files =
-            self.get_storage_files(&container).ok_or(AconfigdError::FailToOverride(anyhow!(
+            self.get_storage_files(&container).ok_or(AconfigdError::FailToFindContainer(anyhow!(
                 "Failed to get storage files for container {}",
                 container,
             )))?;
@@ -382,12 +380,12 @@ impl StorageFilesManager {
         &mut self,
         package: &str,
     ) -> Result<Vec<FlagSnapshot>, AconfigdError> {
-        let container = self.get_container(package)?.ok_or(AconfigdError::FailToOverride(
+        let container = self.get_container(package)?.ok_or(AconfigdError::FailToFindContainer(
             anyhow!("Failed to find container for package {}", package),
         ))?;
 
         let storage_files =
-            self.get_storage_files(&container).ok_or(AconfigdError::FailToOverride(anyhow!(
+            self.get_storage_files(&container).ok_or(AconfigdError::FailToFindContainer(anyhow!(
                 "Failed to get container {} storage files",
                 container,
             )))?;
@@ -401,7 +399,7 @@ impl StorageFilesManager {
         container: &str,
     ) -> Result<Vec<FlagSnapshot>, AconfigdError> {
         let storage_files =
-            self.get_storage_files(container).ok_or(AconfigdError::FailToOverride(anyhow!(
+            self.get_storage_files(container).ok_or(AconfigdError::FailToFindContainer(anyhow!(
                 "Failed to get container {} storage files",
                 container,
             )))?;
