@@ -70,4 +70,7 @@ pub enum AconfigdError {
 
     #[error("fail to create boot storage files")]
     FailToCreateBootFiles(#[source] anyhow::Error),
+
+    #[error("invalid socket request")]
+    InvalidSocketRequest(#[source] anyhow::Error),
 }
