@@ -456,12 +456,6 @@ impl StorageFiles {
         Ok(context.package_exists)
     }
 
-    /// Check if has an aconfig flag
-    pub fn has_flag(&mut self, package: &str, flag: &str) -> Result<bool, AconfigdError> {
-        let context = self.get_package_flag_context(package, flag)?;
-        Ok(context.flag_exists)
-    }
-
     /// Get flag attribute bitfield
     pub fn get_flag_attribute(
         &mut self,
@@ -864,7 +858,7 @@ impl StorageFiles {
         flag: &str,
     ) -> Result<Option<FlagSnapshot>, AconfigdError> {
         let context = self.get_package_flag_context(package, flag)?;
-        if !context.flag_exists {
+        if !context.flag_exists || !self.has_boot_copy() {
             return Ok(None);
         }
 
@@ -893,7 +887,7 @@ impl StorageFiles {
         &mut self,
         package: &str,
     ) -> Result<Vec<FlagSnapshot>, AconfigdError> {
-        if !self.has_package(package)? {
+        if !self.has_package(package)? || !self.has_boot_copy() {
             return Ok(Vec::new());
         }
 
@@ -1000,6 +994,10 @@ impl StorageFiles {
 
     /// list all flags in a container
     pub fn list_all_flags(&mut self) -> Result<Vec<FlagSnapshot>, AconfigdError> {
+        if !self.has_boot_copy() {
+            return Ok(Vec::new());
+        }
+
         let mut snapshots: Vec<_> = list_flags_with_info(
             &self.storage_record.persist_package_map.display().to_string(),
             &self.storage_record.persist_flag_map.display().to_string(),
@@ -1295,20 +1293,6 @@ mod tests {
         let mut storage_files = create_mock_storage_files(&container, &root_dir);
         assert!(!storage_files.has_package("not_exist").unwrap());
         assert!(storage_files.has_package("com.android.aconfig.storage.test_1").unwrap());
-    }
-
-    #[test]
-    fn test_has_flag() {
-        let container = ContainerMock::new();
-        let root_dir = StorageRootDirMock::new();
-        let mut storage_files = create_mock_storage_files(&container, &root_dir);
-        assert!(!storage_files.has_flag("not_exist", "enabled_rw").unwrap());
-        assert!(!storage_files
-            .has_flag("com.android.aconfig.storage.test_1", "not_exist")
-            .unwrap());
-        assert!(storage_files
-            .has_flag("com.android.aconfig.storage.test_1", "enabled_rw")
-            .unwrap());
     }
 
     #[test]
