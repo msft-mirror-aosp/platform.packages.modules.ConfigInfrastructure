@@ -32,6 +32,10 @@
 mod auto_generated {
     pub use aconfigd_rust_proto::aconfigd::storage_request_message::list_storage_message::Msg as ProtoListStorageMessageMsg;
     pub use aconfigd_rust_proto::aconfigd::storage_request_message::FlagOverrideMessage as ProtoFlagOverrideMessage;
+    pub use aconfigd_rust_proto::aconfigd::storage_request_message::OTAFlagStagingMessage as ProtoOTAFlagStagingMessage;
+    pub use aconfigd_rust_proto::aconfigd::storage_request_message::NewStorageMessage as ProtoNewStorageMessage;
+    pub use aconfigd_rust_proto::aconfigd::storage_request_message::FlagQueryMessage as ProtoFlagQueryMessage;
+    pub use aconfigd_rust_proto::aconfigd::storage_request_message::RemoveLocalOverrideMessage as ProtoRemoveLocalOverrideMessage;
     pub use aconfigd_rust_proto::aconfigd::storage_request_message::FlagOverrideType as ProtoFlagOverrideType;
     pub use aconfigd_rust_proto::aconfigd::storage_request_message::ListStorageMessage as ProtoListStorageMessage;
     pub use aconfigd_rust_proto::aconfigd::storage_request_message::Msg as ProtoStorageRequestMessageMsg;
@@ -57,6 +61,10 @@ mod auto_generated {
     include!(concat!(env!("OUT_DIR"), "/aconfigd_proto/mod.rs"));
     pub use aconfigd::storage_request_message::list_storage_message::Msg as ProtoListStorageMessageMsg;
     pub use aconfigd::storage_request_message::FlagOverrideMessage as ProtoFlagOverrideMessage;
+    pub use aconfigd::storage_request_message::OTAFlagStagingMessage as ProtoOTAFlagStagingMessage;
+    pub use aconfigd::storage_request_message::NewStorageMessage as ProtoNewStorageMessage;
+    pub use aconfigd::storage_request_message::FlagQueryMessage as ProtoFlagQueryMessage;
+    pub use aconfigd::storage_request_message::RemoveLocalOverrideMessage as ProtoRemoveLocalOverrideMessage;
     pub use aconfigd::storage_request_message::FlagOverrideType as ProtoFlagOverrideType;
     pub use aconfigd::storage_request_message::ListStorageMessage as ProtoListStorageMessage;
     pub use aconfigd::storage_request_message::Msg as ProtoStorageRequestMessageMsg;
