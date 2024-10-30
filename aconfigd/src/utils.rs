@@ -84,7 +84,7 @@ pub(crate) fn write_pb_to_file<T: protobuf::Message>(
     file: &Path,
 ) -> Result<(), AconfigdError> {
     let bytes = protobuf::Message::write_to_bytes(pb).map_err(|errmsg| {
-        AconfigdError::FailToSeralizePb(anyhow!(
+        AconfigdError::FailToSerializePb(anyhow!(
             "Fail to serialize protobuf to bytes while writing to {}: {}",
             file.display(),
             errmsg
