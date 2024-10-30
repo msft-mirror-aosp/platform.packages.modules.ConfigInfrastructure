@@ -76,4 +76,16 @@ pub enum AconfigdError {
 
     #[error("invalid socket request")]
     InvalidSocketRequest(#[source] anyhow::Error),
+
+    #[error("fail to bind socket")]
+    FailToBindSocket(#[source] anyhow::Error),
+
+    #[error("fail to read from socket")]
+    FailToReadFromSocket(#[source] anyhow::Error),
+
+    #[error("fail to seralize protobuf to bytes")]
+    FailToSeralizePb(#[source] anyhow::Error),
+
+    #[error("fail to write to socket")]
+    FailToWriteToSocket(#[source] anyhow::Error),
 }
