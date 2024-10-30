@@ -59,6 +59,9 @@ pub enum AconfigdError {
     #[error("flag does not exist")]
     FlagDoesNotExist(#[source] anyhow::Error),
 
+    #[error("cannot find container")]
+    FailToFindContainer(#[source] anyhow::Error),
+
     #[error("fail to override flag")]
     FailToOverride(#[source] anyhow::Error),
 
@@ -70,4 +73,7 @@ pub enum AconfigdError {
 
     #[error("fail to create boot storage files")]
     FailToCreateBootFiles(#[source] anyhow::Error),
+
+    #[error("invalid socket request")]
+    InvalidSocketRequest(#[source] anyhow::Error),
 }
