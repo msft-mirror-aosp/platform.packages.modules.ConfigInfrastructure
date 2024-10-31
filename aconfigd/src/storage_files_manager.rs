@@ -339,10 +339,9 @@ impl StorageFilesManager {
         ))?;
 
         let storage_files =
-            self.get_storage_files(&container).ok_or(AconfigdError::FailToFindContainer(anyhow!(
-                "Failed to get storage files for container {}",
-                container,
-            )))?;
+            self.get_storage_files(&container).ok_or(AconfigdError::FailToFindContainer(
+                anyhow!("Failed to get storage files for container {}", container,),
+            ))?;
 
         let context = storage_files.get_package_flag_context(package, flag)?;
         storage_files.remove_local_override(&context)
@@ -385,10 +384,9 @@ impl StorageFilesManager {
         ))?;
 
         let storage_files =
-            self.get_storage_files(&container).ok_or(AconfigdError::FailToFindContainer(anyhow!(
-                "Failed to get container {} storage files",
-                container,
-            )))?;
+            self.get_storage_files(&container).ok_or(AconfigdError::FailToFindContainer(
+                anyhow!("Failed to get container {} storage files", container,),
+            ))?;
 
         storage_files.list_flags_in_package(package)
     }
@@ -399,10 +397,9 @@ impl StorageFilesManager {
         container: &str,
     ) -> Result<Vec<FlagSnapshot>, AconfigdError> {
         let storage_files =
-            self.get_storage_files(container).ok_or(AconfigdError::FailToFindContainer(anyhow!(
-                "Failed to get container {} storage files",
-                container,
-            )))?;
+            self.get_storage_files(container).ok_or(AconfigdError::FailToFindContainer(
+                anyhow!("Failed to get container {} storage files", container,),
+            ))?;
 
         storage_files.list_all_flags()
     }
