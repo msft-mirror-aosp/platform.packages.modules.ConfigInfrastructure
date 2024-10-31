@@ -17,6 +17,9 @@
 package android.configinfrastructure.aconfig.test;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 import android.aconfig.DeviceProtos;
 import android.aconfig.nano.Aconfig.parsed_flag;
@@ -78,5 +81,14 @@ public class AconfigPackageTests {
 
             assertEquals(rVal, jVal);
         }
+    }
+
+    @Test
+    public void testAconfigPackage_load_withError() {
+        // load fake package
+        AconfigPackage p = AconfigPackage.load("fake_package");
+        assertNotNull(p);
+        assertFalse(p.getBooleanFlagValue("fake_flag", false));
+        assertTrue(p.getBooleanFlagValue("fake_flag", true));
     }
 }
