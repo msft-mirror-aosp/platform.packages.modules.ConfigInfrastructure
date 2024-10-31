@@ -84,7 +84,7 @@ pub enum AconfigdError {
     FailToReadFromSocket(#[source] anyhow::Error),
 
     #[error("fail to seralize protobuf to bytes")]
-    FailToSeralizePb(#[source] anyhow::Error),
+    FailToSerializePb(#[source] anyhow::Error),
 
     #[error("fail to write to socket")]
     FailToWriteToSocket(#[source] anyhow::Error),
