@@ -48,6 +48,9 @@ rust_binary {
     srcs: ["src/main.rs"],
     rustlibs: [
         "libaconfigd_mainline",
+        "libandroid_logger",
+        "librustutils",
+        "liblibc",
     ],
 }
 
