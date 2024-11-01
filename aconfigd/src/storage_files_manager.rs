@@ -15,7 +15,7 @@
  */
 
 use crate::storage_files::{FlagSnapshot, StorageFiles};
-use crate::utils::{set_file_permission, write_pb_to_file};
+use crate::utils::{get_files_digest, set_file_permission, write_pb_to_file};
 use crate::AconfigdError;
 use aconfigd_protos::{
     ProtoFlagOverrideType, ProtoLocalFlagOverrides, ProtoPersistStorageRecord,
@@ -166,8 +166,9 @@ impl StorageFilesManager {
     ) -> Result<(), AconfigdError> {
         match self.get_storage_files(container) {
             Some(storage_files) => {
-                // TODO: replace it with real digest calculation
-                let digest = String::new();
+                let digest = get_files_digest(
+                    &[default_package_map, default_flag_map, default_flag_val, default_flag_info][..],
+                )?;
                 if storage_files.storage_record().digest != digest {
                     self.update_container_storage_files(
                         container,
@@ -419,7 +420,7 @@ mod tests {
     use super::*;
     use crate::storage_files::StorageRecord;
     use crate::test_utils::{has_same_content, ContainerMock, StorageRootDirMock};
-    use crate::utils::read_pb_from_file;
+    use crate::utils::{get_files_digest, read_pb_from_file};
     use aconfig_storage_file::{FlagValueSummary, StoredFlagType};
     use aconfigd_protos::ProtoFlagOverride;
 
@@ -509,7 +510,15 @@ mod tests {
             local_overrides: root_dir.flags_dir.join("mockup_local_overrides.pb"),
             boot_flag_val: root_dir.boot_dir.join("mockup.val"),
             boot_flag_info: root_dir.boot_dir.join("mockup.info"),
-            digest: String::new(),
+            digest: get_files_digest(
+                &[
+                    container.package_map.as_path(),
+                    container.flag_map.as_path(),
+                    container.flag_val.as_path(),
+                    container.flag_info.as_path(),
+                ][..],
+            )
+            .unwrap(),
         };
 
         let expected_storage_files = StorageFiles {
@@ -796,7 +805,16 @@ mod tests {
         entry.set_flag_map(container.flag_map.display().to_string());
         entry.set_flag_val(container.flag_val.display().to_string());
         entry.set_flag_info(container.flag_info.display().to_string());
-        entry.set_digest(String::new());
+        let digest = get_files_digest(
+            &[
+                container.package_map.as_path(),
+                container.flag_map.as_path(),
+                container.flag_val.as_path(),
+                container.flag_info.as_path(),
+            ][..],
+        )
+        .unwrap();
+        entry.set_digest(digest);
         assert_eq!(pb.records[0], entry);
     }
 
