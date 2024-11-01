@@ -73,11 +73,17 @@ message StorageRequestMessage {
     repeated FlagOverride overrides = 2;
   }
 
+  enum RemoveOverrideType {
+    REMOVE_LOCAL_IMMEDIATE = 1;
+    REMOVE_LOCAL_ON_REBOOT = 2;
+  }
+
   // request to remove local flag override
   message RemoveLocalOverrideMessage {
     optional bool remove_all = 1;
     optional string package_name = 2;
     optional string flag_name = 3;
+    optional RemoveOverrideType remove_override_type = 4;
   }
 
   // query persistent flag value and info
