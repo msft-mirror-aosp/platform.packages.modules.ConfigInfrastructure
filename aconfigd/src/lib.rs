@@ -88,4 +88,7 @@ pub enum AconfigdError {
 
     #[error("fail to write to socket")]
     FailToWriteToSocket(#[source] anyhow::Error),
+
+    #[error("failed to get files digest")]
+    FailToGetFilesDigest(#[source] anyhow::Error),
 }

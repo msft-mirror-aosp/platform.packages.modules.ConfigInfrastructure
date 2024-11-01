@@ -16,6 +16,9 @@
 
 use crate::AconfigdError;
 use anyhow::anyhow;
+use openssl::hash::{Hasher, MessageDigest};
+use std::fs::File;
+use std::io::Read;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
@@ -100,10 +103,58 @@ pub(crate) fn write_pb_to_file<T: protobuf::Message>(
     Ok(())
 }
 
+/// The digest is returned as a hexadecimal string.
+pub(crate) fn get_files_digest(paths: &[&Path]) -> Result<String, AconfigdError> {
+    let mut hasher = Hasher::new(MessageDigest::sha256()).map_err(|errmsg| {
+        AconfigdError::FailToGetFilesDigest(anyhow!(
+            "Fail to create hasher for file digest: {}",
+            errmsg
+        ))
+    })?;
+    let mut buffer = [0; 1024];
+    for path in paths {
+        let mut f = File::open(path).map_err(|errmsg| {
+            AconfigdError::FailToGetFilesDigest(anyhow!(
+                "Fail to open file {} for file digest: {}",
+                path.display(),
+                errmsg
+            ))
+        })?;
+        loop {
+            let n = f.read(&mut buffer[..]).map_err(|errmsg| {
+                AconfigdError::FailToGetFilesDigest(anyhow!(
+                    "Fail to read file {} contents for file digest: {}",
+                    path.display(),
+                    errmsg
+                ))
+            })?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buffer).map_err(|errmsg| {
+                AconfigdError::FailToGetFilesDigest(anyhow!(
+                    "Fail to hash file {} contents for file digest: {}",
+                    path.display(),
+                    errmsg
+                ))
+            })?;
+        }
+    }
+    let digest: &[u8] = &hasher.finish().map_err(|errmsg| {
+        AconfigdError::FailToGetFilesDigest(anyhow!("Fail to get final file digest: {}", errmsg))
+    })?;
+    let mut xdigest = String::new();
+    for x in digest {
+        xdigest.push_str(format!("{:02x}", x).as_str());
+    }
+    Ok(xdigest)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use aconfigd_protos::ProtoLocalFlagOverrides;
+    use std::io::Write;
     use tempfile::tempdir;
 
     fn get_file_perm_mode(file: &Path) -> u32 {
@@ -160,5 +211,20 @@ mod tests {
         write_pb_to_file(&pb, &test_pb).unwrap();
         let new_pb: ProtoLocalFlagOverrides = read_pb_from_file(&test_pb).unwrap();
         assert_eq!(new_pb.overrides.len(), 0);
+    }
+
+    #[test]
+    fn test_get_files_digest() {
+        let path1 = Path::new("/tmp/hi.txt");
+        let path2 = Path::new("/tmp/bye.txt");
+        let mut file1 = File::create(path1).unwrap();
+        let mut file2 = File::create(path2).unwrap();
+        file1.write_all(b"Hello, world!").expect("Writing to file");
+        file2.write_all(b"Goodbye, world!").expect("Writing to file");
+        let digest = get_files_digest(&[path1, path2]);
+        assert_eq!(
+            digest.expect("Calculating digest"),
+            "8352c31d9ff5f446b838139b7f4eb5fed821a1f80d6648ffa6ed7391ecf431f4"
+        );
     }
 }
