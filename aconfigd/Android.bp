@@ -74,11 +74,3 @@ rust_test_host {
         "./tests/data/container_with_more_flags.flag.info",
     ],
 }
-
-rust_test_host {
-    name: "libaconfigd_mainline-util.test",
-    team: "trendy_team_android_core_experiments",
-    test_suites: ["general-tests"],
-    defaults: ["aconfigd_mainline.defaults"],
-    srcs: ["src/util.rs"],
-}
