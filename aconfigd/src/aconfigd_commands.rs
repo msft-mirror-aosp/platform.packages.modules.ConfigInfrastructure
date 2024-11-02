@@ -70,6 +70,7 @@ pub fn handle_socket_request_from_stream(
 }
 
 /// start aconfigd socket service
+#[cfg(not(feature = "cargo"))]
 pub fn start_socket() -> Result<(), AconfigdError> {
     // SAFETY: nobody has taken ownership of the inherited FDs yet.
     unsafe {
@@ -116,6 +117,11 @@ pub fn start_socket() -> Result<(), AconfigdError> {
             }
         }
     }
+}
+
+#[cfg(feature = "cargo")]
+pub fn start_socket() -> Result<(), AconfigdError> {
+    Ok(())
 }
 
 /// initialize mainline module storage files
