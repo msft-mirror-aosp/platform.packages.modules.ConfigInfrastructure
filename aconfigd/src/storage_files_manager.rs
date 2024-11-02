@@ -15,10 +15,11 @@
  */
 
 use crate::storage_files::{FlagSnapshot, StorageFiles};
-use crate::utils::{set_file_permission, write_pb_to_file};
+use crate::utils::{get_files_digest, set_file_permission, write_pb_to_file};
 use crate::AconfigdError;
 use aconfigd_protos::{
-    ProtoLocalFlagOverrides, ProtoPersistStorageRecord, ProtoPersistStorageRecords,
+    ProtoFlagOverrideType, ProtoLocalFlagOverrides, ProtoPersistStorageRecord,
+    ProtoPersistStorageRecords,
 };
 use anyhow::anyhow;
 use std::collections::HashMap;
@@ -32,14 +33,6 @@ pub(crate) struct StorageFilesManager {
     pub package_to_container: HashMap<String, String>,
 }
 
-/// Flag value override type
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum FlagOverrideType {
-    ServerOnReboot = 0,
-    LocalOnReboot = 1,
-    LocalImmediate = 2,
-}
-
 impl StorageFilesManager {
     /// Constructor
     pub(crate) fn new(root_dir: &Path) -> Self {
@@ -48,11 +41,6 @@ impl StorageFilesManager {
             all_storage_files: HashMap::new(),
             package_to_container: HashMap::new(),
         }
-    }
-
-    /// Check if has a container or not
-    fn has_container(&self, container: &str) -> bool {
-        self.all_storage_files.contains_key(container)
     }
 
     /// Get storage files for a container
@@ -178,8 +166,9 @@ impl StorageFilesManager {
     ) -> Result<(), AconfigdError> {
         match self.get_storage_files(container) {
             Some(storage_files) => {
-                // TODO: replace it with real digest calculation
-                let digest = String::new();
+                let digest = get_files_digest(
+                    &[default_package_map, default_flag_map, default_flag_val, default_flag_info][..],
+                )?;
                 if storage_files.storage_record().digest != digest {
                     self.update_container_storage_files(
                         container,
@@ -227,16 +216,19 @@ impl StorageFilesManager {
                 ))?;
 
             let record = storage_files.storage_record().clone();
+            let container_available = storage_files.has_boot_copy();
             storage_files.remove_persist_files()?;
             self.all_storage_files.remove(&container);
 
-            self.add_storage_files_from_container(
-                &container,
-                &record.default_package_map,
-                &record.default_flag_map,
-                &record.default_flag_val,
-                &record.default_flag_info,
-            )?;
+            if container_available {
+                self.add_storage_files_from_container(
+                    &container,
+                    &record.default_package_map,
+                    &record.default_flag_map,
+                    &record.default_flag_val,
+                    &record.default_flag_info,
+                )?;
+            }
         }
         Ok(())
     }
@@ -263,28 +255,26 @@ impl StorageFilesManager {
         package: &str,
         flag: &str,
         value: &str,
-        override_type: FlagOverrideType,
+        override_type: ProtoFlagOverrideType,
     ) -> Result<(), AconfigdError> {
-        let container = self.get_container(package)?.ok_or(AconfigdError::FailToOverride(
+        let container = self.get_container(package)?.ok_or(AconfigdError::FailToFindContainer(
             anyhow!("Failed to find container for flag {}.{}", package, flag),
         ))?;
 
         let storage_files =
-            self.get_storage_files(&container).ok_or(AconfigdError::FailToOverride(anyhow!(
-                "Failed to find container for flag {}.{}",
-                package,
-                flag
-            )))?;
+            self.get_storage_files(&container).ok_or(AconfigdError::FailToFindContainer(
+                anyhow!("Failed to find container for flag {}.{}", package, flag),
+            ))?;
 
         let context = storage_files.get_package_flag_context(package, flag)?;
         match override_type {
-            FlagOverrideType::ServerOnReboot => {
+            ProtoFlagOverrideType::SERVER_ON_REBOOT => {
                 storage_files.stage_server_override(&context, value)?;
             }
-            FlagOverrideType::LocalOnReboot => {
+            ProtoFlagOverrideType::LOCAL_ON_REBOOT => {
                 storage_files.stage_local_override(&context, value)?;
             }
-            FlagOverrideType::LocalImmediate => {
+            ProtoFlagOverrideType::LOCAL_IMMEDIATE => {
                 storage_files.stage_local_override(&context, value)?;
 
                 let record = storage_files.storage_record();
@@ -345,15 +335,14 @@ impl StorageFilesManager {
         package: &str,
         flag: &str,
     ) -> Result<(), AconfigdError> {
-        let container = self.get_container(package)?.ok_or(AconfigdError::FailToOverride(
+        let container = self.get_container(package)?.ok_or(AconfigdError::FailToFindContainer(
             anyhow!("Failed to find container for flag {}.{}", package, flag),
         ))?;
 
         let storage_files =
-            self.get_storage_files(&container).ok_or(AconfigdError::FailToOverride(anyhow!(
-                "Failed to get storage files for container {}",
-                container,
-            )))?;
+            self.get_storage_files(&container).ok_or(AconfigdError::FailToFindContainer(
+                anyhow!("Failed to get storage files for container {}", container,),
+            ))?;
 
         let context = storage_files.get_package_flag_context(package, flag)?;
         storage_files.remove_local_override(&context)
@@ -391,15 +380,14 @@ impl StorageFilesManager {
         &mut self,
         package: &str,
     ) -> Result<Vec<FlagSnapshot>, AconfigdError> {
-        let container = self.get_container(package)?.ok_or(AconfigdError::FailToOverride(
+        let container = self.get_container(package)?.ok_or(AconfigdError::FailToFindContainer(
             anyhow!("Failed to find container for package {}", package),
         ))?;
 
         let storage_files =
-            self.get_storage_files(&container).ok_or(AconfigdError::FailToOverride(anyhow!(
-                "Failed to get container {} storage files",
-                container,
-            )))?;
+            self.get_storage_files(&container).ok_or(AconfigdError::FailToFindContainer(
+                anyhow!("Failed to get container {} storage files", container,),
+            ))?;
 
         storage_files.list_flags_in_package(package)
     }
@@ -410,10 +398,9 @@ impl StorageFilesManager {
         container: &str,
     ) -> Result<Vec<FlagSnapshot>, AconfigdError> {
         let storage_files =
-            self.get_storage_files(container).ok_or(AconfigdError::FailToOverride(anyhow!(
-                "Failed to get container {} storage files",
-                container,
-            )))?;
+            self.get_storage_files(container).ok_or(AconfigdError::FailToFindContainer(
+                anyhow!("Failed to get container {} storage files", container,),
+            ))?;
 
         storage_files.list_all_flags()
     }
@@ -433,7 +420,7 @@ mod tests {
     use super::*;
     use crate::storage_files::StorageRecord;
     use crate::test_utils::{has_same_content, ContainerMock, StorageRootDirMock};
-    use crate::utils::read_pb_from_file;
+    use crate::utils::{get_files_digest, read_pb_from_file};
     use aconfig_storage_file::{FlagValueSummary, StoredFlagType};
     use aconfigd_protos::ProtoFlagOverride;
 
@@ -459,11 +446,7 @@ mod tests {
         );
     }
 
-    fn init_storage(
-        container: &ContainerMock,
-        root_dr: &StorageRootDirMock,
-        manager: &mut StorageFilesManager,
-    ) {
+    fn init_storage(container: &ContainerMock, manager: &mut StorageFilesManager) {
         manager
             .add_or_update_container_storage_files(
                 &container.name,
@@ -481,7 +464,7 @@ mod tests {
                 "com.android.aconfig.storage.test_1",
                 "enabled_rw",
                 "false",
-                FlagOverrideType::ServerOnReboot,
+                ProtoFlagOverrideType::SERVER_ON_REBOOT,
             )
             .unwrap();
 
@@ -490,7 +473,7 @@ mod tests {
                 "com.android.aconfig.storage.test_1",
                 "disabled_rw",
                 "false",
-                FlagOverrideType::ServerOnReboot,
+                ProtoFlagOverrideType::SERVER_ON_REBOOT,
             )
             .unwrap();
 
@@ -499,7 +482,7 @@ mod tests {
                 "com.android.aconfig.storage.test_1",
                 "disabled_rw",
                 "true",
-                FlagOverrideType::LocalOnReboot,
+                ProtoFlagOverrideType::LOCAL_ON_REBOOT,
             )
             .unwrap();
     }
@@ -509,7 +492,7 @@ mod tests {
         let container = ContainerMock::new();
         let root_dir = StorageRootDirMock::new();
         let mut manager = StorageFilesManager::new(&root_dir.tmp_dir.path());
-        init_storage(&container, &root_dir, &mut manager);
+        init_storage(&container, &mut manager);
 
         let storage_files = manager.get_storage_files(&container.name).unwrap();
 
@@ -527,7 +510,15 @@ mod tests {
             local_overrides: root_dir.flags_dir.join("mockup_local_overrides.pb"),
             boot_flag_val: root_dir.boot_dir.join("mockup.val"),
             boot_flag_info: root_dir.boot_dir.join("mockup.info"),
-            digest: String::new(),
+            digest: get_files_digest(
+                &[
+                    container.package_map.as_path(),
+                    container.flag_map.as_path(),
+                    container.flag_val.as_path(),
+                    container.flag_info.as_path(),
+                ][..],
+            )
+            .unwrap(),
         };
 
         let expected_storage_files = StorageFiles {
@@ -566,7 +557,7 @@ mod tests {
         let container = ContainerMock::new();
         let root_dir = StorageRootDirMock::new();
         let mut manager = StorageFilesManager::new(&root_dir.tmp_dir.path());
-        init_storage(&container, &root_dir, &mut manager);
+        init_storage(&container, &mut manager);
 
         // copy files over to mimic a container update
         std::fs::copy("./tests/data/package.map", &container.package_map).unwrap();
@@ -611,7 +602,7 @@ mod tests {
         let container = ContainerMock::new();
         let root_dir = StorageRootDirMock::new();
         let mut manager = StorageFilesManager::new(&root_dir.tmp_dir.path());
-        init_storage(&container, &root_dir, &mut manager);
+        init_storage(&container, &mut manager);
         add_example_overrides(&mut manager);
 
         // copy files over to mimic a container update
@@ -669,7 +660,7 @@ mod tests {
         let container = ContainerMock::new();
         let root_dir = StorageRootDirMock::new();
         let mut manager = StorageFilesManager::new(&root_dir.tmp_dir.path());
-        init_storage(&container, &root_dir, &mut manager);
+        init_storage(&container, &mut manager);
         add_example_overrides(&mut manager);
         manager.create_storage_boot_copy("mockup").unwrap();
 
@@ -715,7 +706,7 @@ mod tests {
         let container = ContainerMock::new();
         let root_dir = StorageRootDirMock::new();
         let mut manager = StorageFilesManager::new(&root_dir.tmp_dir.path());
-        init_storage(&container, &root_dir, &mut manager);
+        init_storage(&container, &mut manager);
         add_example_overrides(&mut manager);
         manager.create_storage_boot_copy("mockup").unwrap();
 
@@ -763,7 +754,7 @@ mod tests {
         let container = ContainerMock::new();
         let root_dir = StorageRootDirMock::new();
         let mut manager = StorageFilesManager::new(&root_dir.tmp_dir.path());
-        init_storage(&container, &root_dir, &mut manager);
+        init_storage(&container, &mut manager);
         manager.create_storage_boot_copy("mockup").unwrap();
 
         manager
@@ -771,14 +762,14 @@ mod tests {
                 "com.android.aconfig.storage.test_1",
                 "enabled_rw",
                 "false",
-                FlagOverrideType::LocalImmediate,
+                ProtoFlagOverrideType::LOCAL_IMMEDIATE,
             )
             .unwrap();
 
         let flag =
             manager.get_flag_snapshot("com.android.aconfig.storage.test_1", "enabled_rw").unwrap();
 
-        let mut expected_flag = FlagSnapshot {
+        let expected_flag = FlagSnapshot {
             container: String::from("mockup"),
             package: String::from("com.android.aconfig.storage.test_1"),
             flag: String::from("enabled_rw"),
@@ -799,7 +790,7 @@ mod tests {
         let container = ContainerMock::new();
         let root_dir = StorageRootDirMock::new();
         let mut manager = StorageFilesManager::new(&root_dir.tmp_dir.path());
-        init_storage(&container, &root_dir, &mut manager);
+        init_storage(&container, &mut manager);
 
         let pb_file = root_dir.tmp_dir.path().join("records.pb");
         manager.write_persist_storage_records_to_file(&pb_file).unwrap();
@@ -814,7 +805,16 @@ mod tests {
         entry.set_flag_map(container.flag_map.display().to_string());
         entry.set_flag_val(container.flag_val.display().to_string());
         entry.set_flag_info(container.flag_info.display().to_string());
-        entry.set_digest(String::new());
+        let digest = get_files_digest(
+            &[
+                container.package_map.as_path(),
+                container.flag_map.as_path(),
+                container.flag_val.as_path(),
+                container.flag_info.as_path(),
+            ][..],
+        )
+        .unwrap();
+        entry.set_digest(digest);
         assert_eq!(pb.records[0], entry);
     }
 
@@ -823,7 +823,7 @@ mod tests {
         let container = ContainerMock::new();
         let root_dir = StorageRootDirMock::new();
         let mut manager = StorageFilesManager::new(&root_dir.tmp_dir.path());
-        init_storage(&container, &root_dir, &mut manager);
+        init_storage(&container, &mut manager);
         add_example_overrides(&mut manager);
         manager.create_storage_boot_copy("mockup").unwrap();
 
@@ -832,7 +832,7 @@ mod tests {
         let flag =
             manager.get_flag_snapshot("com.android.aconfig.storage.test_1", "disabled_rw").unwrap();
 
-        let mut expected_flag = FlagSnapshot {
+        let expected_flag = FlagSnapshot {
             container: String::from("mockup"),
             package: String::from("com.android.aconfig.storage.test_1"),
             flag: String::from("disabled_rw"),
@@ -853,14 +853,14 @@ mod tests {
         let container = ContainerMock::new();
         let root_dir = StorageRootDirMock::new();
         let mut manager = StorageFilesManager::new(&root_dir.tmp_dir.path());
-        init_storage(&container, &root_dir, &mut manager);
+        init_storage(&container, &mut manager);
 
         manager
             .override_flag_value(
                 "com.android.aconfig.storage.test_1",
                 "disabled_rw",
                 "true",
-                FlagOverrideType::LocalOnReboot,
+                ProtoFlagOverrideType::LOCAL_ON_REBOOT,
             )
             .unwrap();
 
@@ -869,7 +869,7 @@ mod tests {
                 "com.android.aconfig.storage.test_2",
                 "disabled_rw",
                 "true",
-                FlagOverrideType::LocalOnReboot,
+                ProtoFlagOverrideType::LOCAL_ON_REBOOT,
             )
             .unwrap();
         manager.create_storage_boot_copy("mockup").unwrap();
@@ -917,7 +917,7 @@ mod tests {
         let container = ContainerMock::new();
         let root_dir = StorageRootDirMock::new();
         let mut manager = StorageFilesManager::new(&root_dir.tmp_dir.path());
-        init_storage(&container, &root_dir, &mut manager);
+        init_storage(&container, &mut manager);
         add_example_overrides(&mut manager);
         manager.create_storage_boot_copy("mockup").unwrap();
 
@@ -971,7 +971,7 @@ mod tests {
         let container = ContainerMock::new();
         let root_dir = StorageRootDirMock::new();
         let mut manager = StorageFilesManager::new(&root_dir.tmp_dir.path());
-        init_storage(&container, &root_dir, &mut manager);
+        init_storage(&container, &mut manager);
         add_example_overrides(&mut manager);
         manager.create_storage_boot_copy("mockup").unwrap();
 
