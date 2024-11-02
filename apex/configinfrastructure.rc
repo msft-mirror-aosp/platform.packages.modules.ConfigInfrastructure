@@ -39,4 +39,4 @@ service aconfigd_service /apex/com.android.configinfrastructure/bin/aconfigd-mai
     oneshot
     disabled # does not start with the core class
     file /dev/kmsg w
-    socket aconfigd stream 666 system system
+    socket aconfigd_mainline stream 666 system system
