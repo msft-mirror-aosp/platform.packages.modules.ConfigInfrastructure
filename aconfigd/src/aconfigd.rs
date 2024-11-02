@@ -321,7 +321,7 @@ impl Aconfigd {
 mod tests {
     use super::*;
     use crate::test_utils::{has_same_content, ContainerMock, StorageRootDirMock};
-    use crate::utils::read_pb_from_file;
+    use crate::utils::{get_files_digest, read_pb_from_file};
     use aconfigd_protos::{
         ProtoFlagOverride, ProtoFlagOverrideType, ProtoLocalFlagOverrides,
         ProtoPersistStorageRecord,
@@ -369,6 +369,15 @@ mod tests {
         assert!(boot_flag_info.exists());
         assert!(has_same_content(&container.flag_info, &boot_flag_info));
 
+        let digest = get_files_digest(
+            &[
+                container.package_map.as_path(),
+                container.flag_map.as_path(),
+                container.flag_val.as_path(),
+                container.flag_info.as_path(),
+            ][..],
+        )
+        .unwrap();
         let pb = read_pb_from_file::<ProtoPersistStorageRecords>(&aconfigd.persist_storage_records)
             .unwrap();
         assert_eq!(pb.records.len(), 1);
@@ -379,7 +388,7 @@ mod tests {
         entry.set_flag_map(container.flag_map.display().to_string());
         entry.set_flag_val(container.flag_val.display().to_string());
         entry.set_flag_info(container.flag_info.display().to_string());
-        entry.set_digest(String::new());
+        entry.set_digest(digest);
         assert_eq!(pb.records[0], entry);
     }
 
