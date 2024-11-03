@@ -14,8 +14,10 @@
  * limitations under the License.
  */
 
-use crate::utils::remove_file;
-use crate::utils::{copy_file, read_pb_from_file, set_file_permission, write_pb_to_file};
+use crate::utils::{
+    copy_file, get_files_digest, read_pb_from_file, remove_file, set_file_permission,
+    write_pb_to_file,
+};
 use crate::AconfigdError;
 use aconfig_storage_file::{
     list_flags, list_flags_with_info, FlagInfoBit, FlagValueSummary, FlagValueType,
@@ -152,7 +154,7 @@ impl StorageFiles {
                 .join(container.to_string() + "_local_overrides.pb"),
             boot_flag_val: root_dir.join("boot").join(container.to_string() + ".val"),
             boot_flag_info: root_dir.join("boot").join(container.to_string() + ".info"),
-            digest: String::new(),
+            digest: get_files_digest(&[package_map, flag_map, flag_val, flag_info][..])?,
         };
 
         copy_file(package_map, &record.persist_package_map, 0o444)?;
@@ -454,12 +456,6 @@ impl StorageFiles {
     pub fn has_package(&mut self, package: &str) -> Result<bool, AconfigdError> {
         let context = self.get_package_flag_context(package, "")?;
         Ok(context.package_exists)
-    }
-
-    /// Check if has an aconfig flag
-    pub fn has_flag(&mut self, package: &str, flag: &str) -> Result<bool, AconfigdError> {
-        let context = self.get_package_flag_context(package, flag)?;
-        Ok(context.flag_exists)
     }
 
     /// Get flag attribute bitfield
@@ -864,7 +860,7 @@ impl StorageFiles {
         flag: &str,
     ) -> Result<Option<FlagSnapshot>, AconfigdError> {
         let context = self.get_package_flag_context(package, flag)?;
-        if !context.flag_exists {
+        if !context.flag_exists || !self.has_boot_copy() {
             return Ok(None);
         }
 
@@ -893,7 +889,7 @@ impl StorageFiles {
         &mut self,
         package: &str,
     ) -> Result<Vec<FlagSnapshot>, AconfigdError> {
-        if !self.has_package(package)? {
+        if !self.has_package(package)? || !self.has_boot_copy() {
             return Ok(Vec::new());
         }
 
@@ -1000,6 +996,10 @@ impl StorageFiles {
 
     /// list all flags in a container
     pub fn list_all_flags(&mut self) -> Result<Vec<FlagSnapshot>, AconfigdError> {
+        if !self.has_boot_copy() {
+            return Ok(Vec::new());
+        }
+
         let mut snapshots: Vec<_> = list_flags_with_info(
             &self.storage_record.persist_package_map.display().to_string(),
             &self.storage_record.persist_flag_map.display().to_string(),
@@ -1140,7 +1140,15 @@ mod tests {
             local_overrides: root_dir.flags_dir.join("mockup_local_overrides.pb"),
             boot_flag_val: root_dir.boot_dir.join("mockup.val"),
             boot_flag_info: root_dir.boot_dir.join("mockup.info"),
-            digest: String::new(),
+            digest: get_files_digest(
+                &[
+                    container.package_map.as_path(),
+                    container.flag_map.as_path(),
+                    container.flag_val.as_path(),
+                    container.flag_info.as_path(),
+                ][..],
+            )
+            .unwrap(),
         };
 
         let expected_storage_files = StorageFiles {
@@ -1295,20 +1303,6 @@ mod tests {
         let mut storage_files = create_mock_storage_files(&container, &root_dir);
         assert!(!storage_files.has_package("not_exist").unwrap());
         assert!(storage_files.has_package("com.android.aconfig.storage.test_1").unwrap());
-    }
-
-    #[test]
-    fn test_has_flag() {
-        let container = ContainerMock::new();
-        let root_dir = StorageRootDirMock::new();
-        let mut storage_files = create_mock_storage_files(&container, &root_dir);
-        assert!(!storage_files.has_flag("not_exist", "enabled_rw").unwrap());
-        assert!(!storage_files
-            .has_flag("com.android.aconfig.storage.test_1", "not_exist")
-            .unwrap());
-        assert!(storage_files
-            .has_flag("com.android.aconfig.storage.test_1", "enabled_rw")
-            .unwrap());
     }
 
     #[test]
