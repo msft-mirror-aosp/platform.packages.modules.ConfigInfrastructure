@@ -40,9 +40,14 @@ bootclasspath_fragment {
         // classes into an API surface, e.g. public, system, etc.. Doing so will
         // result in a build failure due to inconsistent flags.
         package_prefixes: [
+            "android.internal.configinfra",
+            "android.provider.configinfra.internal.protobuf",
             "android.provider.aidl",
             "android.provider.flags",
+            "android.provider.internal.aconfig.storage",
             "android.provider.internal.modules.utils.build",
+
+            "android.configinfrastructure.aconfig",
         ],
     },
     // The bootclasspath_fragments that provide APIs on which this depends.
@@ -80,6 +85,12 @@ android_app_certificate {
     certificate: "com.android.configinfrastructure",
 }
 
+prebuilt_etc {
+    name: "com.android.configinfrastrcture.init.rc",
+    src: "configinfrastructure.rc",
+    installable: false,
+}
+
 apex {
     name: "com.android.configinfrastructure",
     bootclasspath_fragments: ["com.android.configinfrastructure-bootclasspath-fragment"],
@@ -89,7 +100,11 @@ apex {
     ],
     manifest: "manifest.json",
     file_contexts: ":com.android.configinfrastructure-file_contexts",
+    binaries: [
+        "aconfigd-mainline",
+    ],
     prebuilts: [
+        "com.android.configinfrastrcture.init.rc",
         "current_sdkinfo",
     ],
     min_sdk_version: "34",
