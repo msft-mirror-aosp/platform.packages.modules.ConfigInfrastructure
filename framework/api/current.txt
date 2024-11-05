@@ -1,1 +1,16 @@
 // Signature format: 2.0
+package android.configinfrastructure.aconfig {
+
+  @FlaggedApi("android.provider.flags.new_storage_public_api") public class AconfigPackage {
+    method @FlaggedApi("android.provider.flags.new_storage_public_api") public boolean getBooleanFlagValue(@NonNull String, boolean);
+    method @FlaggedApi("android.provider.flags.new_storage_public_api") @NonNull public static android.configinfrastructure.aconfig.AconfigPackage load(@NonNull String);
+  }
+
+  @FlaggedApi("android.provider.flags.new_storage_public_api") public class AconfigStorageReadException extends java.lang.RuntimeException {
+    ctor @FlaggedApi("android.provider.flags.new_storage_public_api") public AconfigStorageReadException(@NonNull String);
+    ctor @FlaggedApi("android.provider.flags.new_storage_public_api") public AconfigStorageReadException(@NonNull String, @NonNull Throwable);
+    ctor @FlaggedApi("android.provider.flags.new_storage_public_api") public AconfigStorageReadException(@NonNull Throwable);
+  }
+
+}
+

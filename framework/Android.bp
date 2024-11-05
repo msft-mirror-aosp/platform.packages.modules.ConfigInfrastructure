@@ -24,9 +24,12 @@ java_sdk_library {
     ],
     defaults: ["framework-module-defaults"],
     permitted_packages: [
+        "android.internal.configinfra",
         "android.provider",
         "android.provider.flags",
         "android.provider.aidl",
+
+        "android.configinfrastructure.aconfig",
     ],
     apex_available: [
         "com.android.configinfrastructure",
@@ -35,12 +38,13 @@ java_sdk_library {
     sdk_version: "module_current",
     impl_library_visibility: [
         "//packages/modules/ConfigInfrastructure:__subpackages__",
-    ],
-    libs: [
-        "configinfra_framework_flags_java_lib",
+        "//frameworks/base/ravenwood",
     ],
     static_libs: [
+        "aconfigd_java_proto_lite_lib",
+        "configinfra_framework_flags_java_lib",
         "modules-utils-build",
+        "aconfig_storage_reader_java",
     ],
     aconfig_declarations: [
         "configinfra_framework_flags",
@@ -49,6 +53,14 @@ java_sdk_library {
     lint: {
         baseline_filename: "lint-baseline.xml",
     },
+}
+
+filegroup {
+    name: "framework-configinfrastructure-ravenwood-policies",
+    srcs: [
+        "framework-configinfrastructure-ravenwood-policies.txt",
+    ],
+    visibility: ["//frameworks/base/ravenwood"],
 }
 
 aconfig_declarations {
@@ -65,6 +77,7 @@ java_aconfig_library {
     min_sdk_version: "34",
     apex_available: [
         "com.android.configinfrastructure",
+        "//apex_available:platform", // Used by DeviceConfigService
     ],
     visibility: [
         "//visibility:public",
