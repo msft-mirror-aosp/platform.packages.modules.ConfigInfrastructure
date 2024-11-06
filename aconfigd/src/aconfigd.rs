@@ -24,7 +24,9 @@ use aconfigd_protos::{
     ProtoStorageRequestMessage, ProtoStorageRequestMessageMsg, ProtoStorageReturnMessage,
 };
 use anyhow::anyhow;
-use log::{log, Level};
+use log::{error, warn};
+use std::io::{Read, Write};
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 
 // Aconfigd that is capable of doing both one shot storage file init and socket service
@@ -90,7 +92,7 @@ impl Aconfigd {
                     }
                 }
                 Err(errmsg) => {
-                    log!(Level::Warn, "failed to visit entry: {}", errmsg);
+                    warn!("failed to visit entry: {}", errmsg);
                 }
             }
         }
@@ -286,7 +288,7 @@ impl Aconfigd {
     }
 
     /// Handle socket request
-    pub fn handle_socket_request(
+    fn handle_socket_request(
         &mut self,
         request_pb: &ProtoStorageRequestMessage,
     ) -> Result<ProtoStorageReturnMessage, AconfigdError> {
@@ -315,17 +317,65 @@ impl Aconfigd {
             _ => Err(AconfigdError::InvalidSocketRequest(anyhow!("Invalid socket request type"))),
         }
     }
+
+    /// Handle socket request from a unix stream
+    pub fn handle_socket_request_from_stream(
+        &mut self,
+        stream: &mut UnixStream,
+    ) -> Result<(), AconfigdError> {
+        let mut request = Vec::new();
+        stream.read_to_end(&mut request).map_err(|errmsg| {
+            AconfigdError::FailToReadFromSocket(anyhow!(
+                "Fail to read from socket unix stream: {:?}",
+                errmsg
+            ))
+        })?;
+
+        let request = &protobuf::Message::parse_from_bytes(&request[..]).map_err(|errmsg| {
+            AconfigdError::FailToParse(anyhow!(
+                "Failed to parse into protobuf to buffer: {:?}",
+                errmsg
+            ))
+        })?;
+
+        let return_pb = match self.handle_socket_request(request) {
+            Ok(return_msg) => return_msg,
+            Err(errmsg) => {
+                error!("failed to handle socket request: {}", errmsg);
+                let mut return_msg = ProtoStorageReturnMessage::new();
+                return_msg
+                    .set_error_message(format!("failed to handle socket request: {:?}", errmsg));
+                return_msg
+            }
+        };
+
+        let bytes = protobuf::Message::write_to_bytes(&return_pb).map_err(|errmsg| {
+            AconfigdError::FailToSerializePb(anyhow!(
+                "Fail to serialize protobuf to bytes: {:?}",
+                errmsg
+            ))
+        })?;
+
+        stream.write_all(&bytes).map_err(|errmsg| {
+            AconfigdError::FailToWriteToSocket(anyhow!("Fail to write to a socket: {:?}", errmsg))
+        })?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_utils::{has_same_content, ContainerMock, StorageRootDirMock};
-    use crate::utils::read_pb_from_file;
+    use crate::utils::{get_files_digest, read_pb_from_file};
     use aconfigd_protos::{
         ProtoFlagOverride, ProtoFlagOverrideType, ProtoLocalFlagOverrides,
         ProtoPersistStorageRecord,
     };
+    use std::net::Shutdown;
+    use std::os::fd::{FromRawFd, IntoRawFd, RawFd};
+    use tempfile::tempfile;
 
     fn create_mock_aconfigd(root_dir: &StorageRootDirMock) -> Aconfigd {
         Aconfigd::new(root_dir.tmp_dir.path(), &root_dir.flags_dir.join("storage_records.pb"))
@@ -369,6 +419,15 @@ mod tests {
         assert!(boot_flag_info.exists());
         assert!(has_same_content(&container.flag_info, &boot_flag_info));
 
+        let digest = get_files_digest(
+            &[
+                container.package_map.as_path(),
+                container.flag_map.as_path(),
+                container.flag_val.as_path(),
+                container.flag_info.as_path(),
+            ][..],
+        )
+        .unwrap();
         let pb = read_pb_from_file::<ProtoPersistStorageRecords>(&aconfigd.persist_storage_records)
             .unwrap();
         assert_eq!(pb.records.len(), 1);
@@ -379,7 +438,7 @@ mod tests {
         entry.set_flag_map(container.flag_map.display().to_string());
         entry.set_flag_val(container.flag_val.display().to_string());
         entry.set_flag_info(container.flag_info.display().to_string());
-        entry.set_digest(String::new());
+        entry.set_digest(digest);
         assert_eq!(pb.records[0], entry);
     }
 
@@ -869,6 +928,42 @@ mod tests {
         assert!(return_msg.is_err());
         if let Err(errmsg) = return_msg {
             assert_eq!("cannot find container", format!("{}", errmsg));
+        }
+    }
+
+    #[test]
+    fn test_aconfigd_unix_stream() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut aconfigd = create_mock_aconfigd(&root_dir);
+        add_mockup_container_storage(&container, &mut aconfigd);
+        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+
+        let mut request = ProtoStorageRequestMessage::new();
+        let actual_request = request.mut_flag_query_message();
+        actual_request.set_package_name("abc".to_string());
+        actual_request.set_flag_name("def".to_string());
+        let bytes = protobuf::Message::write_to_bytes(&request).unwrap();
+
+        let (mut stream1, mut stream2) = UnixStream::pair().unwrap();
+        stream1.write_all(&bytes).unwrap();
+        stream1.shutdown(Shutdown::Write).unwrap();
+        let result = aconfigd.handle_socket_request_from_stream(&mut stream2);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_negative_aconfigd_unix_stream() {
+        let root_dir = StorageRootDirMock::new();
+        let mut aconfigd = create_mock_aconfigd(&root_dir);
+
+        let (mut stream1, mut stream2) = UnixStream::pair().unwrap();
+        stream1.write_all(b"hello world").unwrap();
+        stream1.shutdown(Shutdown::Write).unwrap();
+        let result = aconfigd.handle_socket_request_from_stream(&mut stream2);
+        assert!(result.is_err());
+        if let Err(errmsg) = result {
+            assert_eq!("fail to parse storage file", format!("{}", errmsg));
         }
     }
 }
