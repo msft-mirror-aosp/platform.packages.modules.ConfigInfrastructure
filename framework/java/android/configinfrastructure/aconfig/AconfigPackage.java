@@ -24,8 +24,6 @@ import android.aconfig.storage.StorageFileProvider;
 import android.annotation.FlaggedApi;
 import android.annotation.NonNull;
 
-import java.nio.file.FileSystemNotFoundException;
-
 /**
  * An {@code aconfig} package containing the enabled state of its flags.
  *
@@ -43,40 +41,27 @@ public class AconfigPackage {
 
     private AconfigPackage() {}
 
-    private static AconfigPackage EMPTY = new AconfigPackage();
-
     /**
      * Loads an Aconfig Package from Aconfig Storage.
      *
-     * <p>This method attempts to load the specified Aconfig package. If the package is not found in
-     * Aconfig Storage, an empty instance of {@link AconfigPackage} is returned. This empty instance
-     * is not backed by a real Aconfig package in storage, meaning it will not contain any
-     * configuration data.
+     * <p>This method attempts to load the specified Aconfig package.
      *
-     * @throws AconfigStorageReadException If the package is not found in the container.
-     * @throws FileSystemNotFoundException If Aconfig Storage is not available on the device.
      * @param packageName The name of the Aconfig package to load.
-     * @return An instance of {@link AconfigPackage}, which may be empty if the package is not
-     *     found in the container.
+     * @return An instance of {@link AconfigPackage}, which may be empty if the package is not found
+     *     in the container.
+     * @throws AconfigStorageReadException if there is an error reading from Aconfig Storage, such
+     *     as if the storage system is not found, the package is not found, or there is an error
+     *     reading the storage file. The specific error code can be obtained using {@link
+     *     AconfigStorageReadException#getErrorCode()}.
      */
     @FlaggedApi(FLAG_NEW_STORAGE_PUBLIC_API)
     public static @NonNull AconfigPackage load(@NonNull String packageName) {
         AconfigPackage aPackage = new AconfigPackage();
-        aPackage.impl = new AconfigPackageImpl();
-        int code = 0;
         try {
-            code = aPackage.impl.load(packageName, StorageFileProvider.getDefaultProvider());
+            aPackage.impl =
+                    AconfigPackageImpl.load(packageName, StorageFileProvider.getDefaultProvider());
         } catch (AconfigStorageException e) {
-            throw new AconfigStorageReadException(e);
-        }
-        switch (code) {
-            case AconfigPackageImpl.ERROR_NEW_STORAGE_SYSTEM_NOT_FOUND:
-                throw new FileSystemNotFoundException(
-                        "Aconfig new storage is not found on this device");
-            case AconfigPackageImpl.ERROR_PACKAGE_NOT_FOUND:
-                return EMPTY;
-            default:
-                // it won't have container not found error
+            throw new AconfigStorageReadException(e.getErrorCode(), e);
         }
         return aPackage;
     }
@@ -94,9 +79,6 @@ public class AconfigPackage {
      */
     @FlaggedApi(FLAG_NEW_STORAGE_PUBLIC_API)
     public boolean getBooleanFlagValue(@NonNull String flagName, boolean defaultValue) {
-        if (this.equals(EMPTY)) {
-            return defaultValue;
-        }
         return impl.getBooleanFlagValue(flagName, defaultValue);
     }
 }
