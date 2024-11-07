@@ -7,9 +7,15 @@ package android.configinfrastructure.aconfig {
   }
 
   @FlaggedApi("android.provider.flags.new_storage_public_api") public class AconfigStorageReadException extends java.lang.RuntimeException {
-    ctor @FlaggedApi("android.provider.flags.new_storage_public_api") public AconfigStorageReadException(@NonNull String);
-    ctor @FlaggedApi("android.provider.flags.new_storage_public_api") public AconfigStorageReadException(@NonNull String, @NonNull Throwable);
-    ctor @FlaggedApi("android.provider.flags.new_storage_public_api") public AconfigStorageReadException(@NonNull Throwable);
+    ctor @FlaggedApi("android.provider.flags.new_storage_public_api") public AconfigStorageReadException(int, @NonNull String);
+    ctor @FlaggedApi("android.provider.flags.new_storage_public_api") public AconfigStorageReadException(int, @NonNull String, @NonNull Throwable);
+    ctor @FlaggedApi("android.provider.flags.new_storage_public_api") public AconfigStorageReadException(int, @NonNull Throwable);
+    method @FlaggedApi("android.provider.flags.new_storage_public_api") public int getErrorCode();
+    field @FlaggedApi("android.provider.flags.new_storage_public_api") public static final int ERROR_CANNOT_READ_STORAGE_FILE = 4; // 0x4
+    field @FlaggedApi("android.provider.flags.new_storage_public_api") public static final int ERROR_CONTAINER_NOT_FOUND = 3; // 0x3
+    field @FlaggedApi("android.provider.flags.new_storage_public_api") public static final int ERROR_GENERIC = 0; // 0x0
+    field @FlaggedApi("android.provider.flags.new_storage_public_api") public static final int ERROR_PACKAGE_NOT_FOUND = 2; // 0x2
+    field @FlaggedApi("android.provider.flags.new_storage_public_api") public static final int ERROR_STORAGE_SYSTEM_NOT_FOUND = 1; // 0x1
   }
 
 }
