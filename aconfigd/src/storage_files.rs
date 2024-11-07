@@ -131,11 +131,7 @@ impl StorageFiles {
     ) -> Result<Self, AconfigdError> {
         let version =
             get_storage_file_version(&flag_val.display().to_string()).map_err(|errmsg| {
-                AconfigdError::FailToParse(anyhow!(
-                    "Failed to get file version from {} : {}",
-                    flag_val.display(),
-                    errmsg
-                ))
+                AconfigdError::FailToGetFileVersion { file: flag_val.display().to_string(), errmsg }
             })?;
 
         let record = StorageRecord {
@@ -225,11 +221,7 @@ impl StorageFiles {
         // SAFETY: As per the safety comment, there are no other writes to the underlying file.
         unsafe {
             map_file(&file_path.display().to_string()).map_err(|errmsg| {
-                AconfigdError::FailToMap(anyhow!(
-                    "Failed to map file {} : {}",
-                    file_path.display(),
-                    errmsg
-                ))
+                AconfigdError::FailToMapFile { file: file_path.display().to_string(), errmsg }
             })
         }
     }
@@ -244,10 +236,9 @@ impl StorageFiles {
                 )?);
             }
         }
-        self.package_map.as_ref().ok_or(AconfigdError::FailToMap(anyhow!(
-            "Failed to map file {}",
-            &self.storage_record.persist_package_map.display()
-        )))
+        self.package_map.as_ref().ok_or(AconfigdError::MappedFileIsNone {
+            file: self.storage_record.persist_package_map.display().to_string(),
+        })
     }
 
     /// Get flag map memory mapping.
@@ -259,10 +250,9 @@ impl StorageFiles {
                     Some(Self::get_immutable_file_mapping(&self.storage_record.persist_flag_map)?);
             }
         }
-        self.flag_map.as_ref().ok_or(AconfigdError::FailToMap(anyhow!(
-            "Failed to map file {}",
-            &self.storage_record.persist_flag_map.display()
-        )))
+        self.flag_map.as_ref().ok_or(AconfigdError::MappedFileIsNone {
+            file: self.storage_record.persist_flag_map.display().to_string(),
+        })
     }
 
     /// Get default flag value memory mapping.
@@ -274,10 +264,9 @@ impl StorageFiles {
                     Some(Self::get_immutable_file_mapping(&self.storage_record.default_flag_val)?);
             }
         }
-        self.flag_val.as_ref().ok_or(AconfigdError::FailToMap(anyhow!(
-            "Failed to map file {}",
-            &self.storage_record.default_flag_val.display()
-        )))
+        self.flag_val.as_ref().ok_or(AconfigdError::MappedFileIsNone {
+            file: self.storage_record.default_flag_val.display().to_string(),
+        })
     }
 
     /// Get boot flag value memory mapping.
@@ -295,10 +284,9 @@ impl StorageFiles {
                     Some(Self::get_immutable_file_mapping(&self.storage_record.boot_flag_val)?);
             }
         }
-        self.boot_flag_val.as_ref().ok_or(AconfigdError::FailToMap(anyhow!(
-            "Failed to map file {}",
-            &self.storage_record.boot_flag_val.display()
-        )))
+        self.boot_flag_val.as_ref().ok_or(AconfigdError::MappedFileIsNone {
+            file: self.storage_record.boot_flag_val.display().to_string(),
+        })
     }
 
     /// Get boot flag info memory mapping.
@@ -316,10 +304,9 @@ impl StorageFiles {
                     Some(Self::get_immutable_file_mapping(&self.storage_record.boot_flag_info)?);
             }
         }
-        self.boot_flag_info.as_ref().ok_or(AconfigdError::FailToMap(anyhow!(
-            "Failed to map file {}",
-            &self.storage_record.boot_flag_info.display()
-        )))
+        self.boot_flag_info.as_ref().ok_or(AconfigdError::MappedFileIsNone {
+            file: self.storage_record.boot_flag_info.display().to_string(),
+        })
     }
 
     /// Get mutable file mapping of a file.
@@ -336,11 +323,7 @@ impl StorageFiles {
         // SAFETY: As per the safety comment, there are no other writes to the underlying file.
         unsafe {
             map_mutable_storage_file(&file_path.display().to_string()).map_err(|errmsg| {
-                AconfigdError::FailToMap(anyhow!(
-                    "Failed to map mutable file {} : {}",
-                    file_path.display(),
-                    errmsg
-                ))
+                AconfigdError::FailToMapFile { file: file_path.display().to_string(), errmsg }
             })
         }
     }
@@ -355,10 +338,9 @@ impl StorageFiles {
                     Some(Self::get_mutable_file_mapping(&self.storage_record.persist_flag_val)?);
             }
         }
-        self.persist_flag_val.as_mut().ok_or(AconfigdError::FailToMap(anyhow!(
-            "Failed to map file {}",
-            &self.storage_record.persist_flag_val.display()
-        )))
+        self.persist_flag_val.as_mut().ok_or(AconfigdError::MappedFileIsNone {
+            file: self.storage_record.persist_flag_val.display().to_string(),
+        })
     }
 
     /// Get persist flag info memory mapping.
@@ -371,10 +353,9 @@ impl StorageFiles {
                     Some(Self::get_mutable_file_mapping(&self.storage_record.persist_flag_info)?);
             }
         }
-        self.persist_flag_info.as_mut().ok_or(AconfigdError::FailToMap(anyhow!(
-            "Failed to map file {}",
-            &self.storage_record.persist_flag_info.display()
-        )))
+        self.persist_flag_info.as_mut().ok_or(AconfigdError::MappedFileIsNone {
+            file: self.storage_record.persist_flag_info.display().to_string(),
+        })
     }
 
     /// Get storage record
@@ -409,12 +390,7 @@ impl StorageFiles {
 
         let package_context =
             get_package_read_context(self.get_package_map()?, package).map_err(|errmsg| {
-                AconfigdError::FailToParse(anyhow!(
-                    "Failed to get package context for {} in container {}: {}",
-                    package,
-                    self.storage_record.container,
-                    errmsg
-                ))
+                AconfigdError::FailToGetPackageContext { package: package.to_string(), errmsg }
             })?;
 
         if let Some(pkg) = package_context {
@@ -424,26 +400,18 @@ impl StorageFiles {
             }
 
             let flag_context = get_flag_read_context(self.get_flag_map()?, pkg.package_id, flag)
-                .map_err(|errmsg| {
-                    AconfigdError::FailToParse(anyhow!(
-                        "Failed to get flag context for {}.{} in container {}: {}",
-                        package,
-                        flag,
-                        self.storage_record.container,
-                        errmsg
-                    ))
+                .map_err(|errmsg| AconfigdError::FailToGetFlagContext {
+                    flag: package.to_string() + "." + flag,
+                    errmsg,
                 })?;
 
             if let Some(flg) = flag_context {
                 context.flag_exists = true;
                 context.value_type = FlagValueType::try_from(flg.flag_type).map_err(|errmsg| {
-                    AconfigdError::InvalidFlagValueType(anyhow!(
-                        "Invalid flag value type for {}.{} in container {}: {}",
-                        package,
-                        flag,
-                        self.storage_record.container,
-                        errmsg
-                    ))
+                    AconfigdError::InvalidFlagValueType {
+                        flag: package.to_string() + "." + flag,
+                        errmsg,
+                    }
                 })?;
                 context.flag_index = pkg.boolean_start_index + flg.flag_index as u32;
             }
@@ -464,11 +432,9 @@ impl StorageFiles {
         context: &PackageFlagContext,
     ) -> Result<u8, AconfigdError> {
         if !context.flag_exists {
-            return Err(AconfigdError::FlagDoesNotExist(anyhow!(
-                "Flag {}.{} does not exist",
-                context.package,
-                context.flag,
-            )));
+            return Err(AconfigdError::FlagDoesNotExist {
+                flag: context.package.to_string() + "." + &context.flag,
+            });
         }
 
         let flag_info_file = self.get_persist_flag_info()?;
@@ -477,13 +443,9 @@ impl StorageFiles {
             context.value_type,
             context.flag_index,
         )
-        .map_err(|errmsg| {
-            AconfigdError::FailToParse(anyhow!(
-                "Failed to get flag info attribute for {}.{}: {}",
-                context.package,
-                context.flag,
-                errmsg
-            ))
+        .map_err(|errmsg| AconfigdError::FailToGetFlagAttribute {
+            flag: context.package.to_string() + "." + &context.flag,
+            errmsg,
         })?)
     }
 
@@ -493,22 +455,18 @@ impl StorageFiles {
         context: &PackageFlagContext,
     ) -> Result<String, AconfigdError> {
         if !context.flag_exists {
-            return Err(AconfigdError::FlagDoesNotExist(anyhow!(
-                "Flag {}.{} does not exist",
-                context.package,
-                context.flag,
-            )));
+            return Err(AconfigdError::FlagDoesNotExist {
+                flag: context.package.to_string() + "." + &context.flag,
+            });
         }
 
         match context.value_type {
             FlagValueType::Boolean => {
                 let value = get_boolean_flag_value(file, context.flag_index).map_err(|errmsg| {
-                    AconfigdError::FailToParse(anyhow!(
-                        "Failed to get boot flag value for {}.{}: {}",
-                        context.package,
-                        context.flag,
-                        errmsg
-                    ))
+                    AconfigdError::FailToGetFlagValue {
+                        flag: context.package.to_string() + "." + &context.flag,
+                        errmsg,
+                    }
                 })?;
                 if value {
                     Ok(String::from("true"))
@@ -571,11 +529,9 @@ impl StorageFiles {
             }
         }
 
-        Err(AconfigdError::FailToParse(anyhow!(
-            "Failed to find the expeected local override for {}.{} in storage file",
-            context.package,
-            context.flag
-        )))
+        Err(AconfigdError::FlagHasNoLocalOverride {
+            flag: context.package.to_string() + "." + &context.flag,
+        })
     }
 
     /// Set flag value to file
@@ -587,21 +543,15 @@ impl StorageFiles {
         match context.value_type {
             FlagValueType::Boolean => {
                 if value != "true" && value != "false" {
-                    return Err(AconfigdError::FailToOverride(anyhow!(
-                        "Fail to override flag {}.{}, invalid value {}",
-                        context.package,
-                        context.flag,
-                        value
-                    )));
+                    return Err(AconfigdError::InvalidFlagValue {
+                        flag: context.package.to_string() + "." + &context.flag,
+                        value: value.to_string(),
+                    });
                 }
                 set_boolean_flag_value(file, context.flag_index, value == "true").map_err(
-                    |errmsg| {
-                        AconfigdError::FailToOverride(anyhow!(
-                            "Fail to override flag {}.{}: {}",
-                            context.package,
-                            context.flag,
-                            errmsg
-                        ))
+                    |errmsg| AconfigdError::FailToSetFlagValue {
+                        flag: context.package.to_string() + "." + &context.flag,
+                        errmsg,
                     },
                 )?;
             }
@@ -617,14 +567,9 @@ impl StorageFiles {
         value: bool,
     ) -> Result<(), AconfigdError> {
         set_flag_has_server_override(file, context.value_type, context.flag_index, value).map_err(
-            |errmsg| {
-                AconfigdError::FailToOverride(anyhow!(
-                    "Fail to set flag has server override for {}.{} to {}: {}",
-                    context.package,
-                    context.flag,
-                    value,
-                    errmsg
-                ))
+            |errmsg| AconfigdError::FailToSetFlagHasServerOverride {
+                flag: context.package.to_string() + "." + &context.flag,
+                errmsg,
             },
         )?;
 
@@ -638,14 +583,9 @@ impl StorageFiles {
         value: bool,
     ) -> Result<(), AconfigdError> {
         set_flag_has_local_override(file, context.value_type, context.flag_index, value).map_err(
-            |errmsg| {
-                AconfigdError::FailToOverride(anyhow!(
-                    "Fail to set flag has server override for {}.{} to {}: {}",
-                    context.package,
-                    context.flag,
-                    value,
-                    errmsg
-                ))
+            |errmsg| AconfigdError::FailToSetFlagHasLocalOverride {
+                flag: context.package.to_string() + "." + &context.flag,
+                errmsg,
             },
         )?;
 
@@ -660,11 +600,9 @@ impl StorageFiles {
     ) -> Result<(), AconfigdError> {
         let attribute = self.get_flag_attribute(context)?;
         if (attribute & FlagInfoBit::IsReadWrite as u8) == 0 {
-            return Err(AconfigdError::FailToOverride(anyhow!(
-                "Fail to override read only flag {}.{}",
-                context.package,
-                context.flag
-            )));
+            return Err(AconfigdError::FlagIsReadOnly {
+                flag: context.package.to_string() + "." + &context.flag,
+            });
         }
 
         let flag_val_file = self.get_persist_flag_val()?;
@@ -684,11 +622,9 @@ impl StorageFiles {
     ) -> Result<(), AconfigdError> {
         let attribute = self.get_flag_attribute(context)?;
         if (attribute & FlagInfoBit::IsReadWrite as u8) == 0 {
-            return Err(AconfigdError::FailToOverride(anyhow!(
-                "Fail to override read only flag {}.{}",
-                context.package,
-                context.flag
-            )));
+            return Err(AconfigdError::FlagIsReadOnly {
+                flag: context.package.to_string() + "." + &context.flag,
+            });
         }
 
         let mut exist = false;
@@ -725,12 +661,9 @@ impl StorageFiles {
             &self.storage_record.persist_flag_val.display().to_string(),
             &self.storage_record.persist_flag_info.display().to_string(),
         )
-        .map_err(|errmsg| {
-            AconfigdError::FailToParse(anyhow!(
-                "Failed to list flags with info for container {}: {}",
-                &self.storage_record.container,
-                errmsg
-            ))
+        .map_err(|errmsg| AconfigdError::FailToListFlagsWithInfo {
+            container: self.storage_record.container.clone(),
+            errmsg,
         })?;
 
         Ok(listed_flags
@@ -759,11 +692,9 @@ impl StorageFiles {
     ) -> Result<(), AconfigdError> {
         let attribute = self.get_flag_attribute(context)?;
         if (attribute & FlagInfoBit::HasLocalOverride as u8) == 0 {
-            return Err(AconfigdError::FailToOverride(anyhow!(
-                "Fail to remove local override for {}.{}, it does not have local override",
-                context.package,
-                context.flag,
-            )));
+            return Err(AconfigdError::FlagHasNoLocalOverride {
+                flag: context.package.to_string() + "." + &context.flag,
+            });
         }
 
         let mut pb =
@@ -790,11 +721,9 @@ impl StorageFiles {
             let context = self.get_package_flag_context(entry.package_name(), entry.flag_name())?;
             let attribute = self.get_flag_attribute(&context)?;
             if (attribute & FlagInfoBit::HasLocalOverride as u8) == 0 {
-                return Err(AconfigdError::FailToOverride(anyhow!(
-                    "Fail to remove local override for {}.{}, it does not have local override",
-                    context.package,
-                    context.flag,
-                )));
+                return Err(AconfigdError::FlagHasNoLocalOverride {
+                    flag: context.package.to_string() + "." + &context.flag,
+                });
             }
 
             let flag_info_file = self.get_persist_flag_info()?;
@@ -899,12 +828,9 @@ impl StorageFiles {
             &self.storage_record.persist_flag_val.display().to_string(),
             &self.storage_record.persist_flag_info.display().to_string(),
         )
-        .map_err(|errmsg| {
-            AconfigdError::FailToParse(anyhow!(
-                "Failed to list persist flags with info for container {}: {}",
-                &self.storage_record.container,
-                errmsg
-            ))
+        .map_err(|errmsg| AconfigdError::FailToListFlagsWithInfo {
+            container: self.storage_record.container.clone(),
+            errmsg,
         })?
         .into_iter()
         .filter(|f| f.package_name == package)
@@ -932,12 +858,9 @@ impl StorageFiles {
             &self.storage_record.persist_flag_map.display().to_string(),
             &self.storage_record.boot_flag_val.display().to_string(),
         )
-        .map_err(|errmsg| {
-            AconfigdError::FailToParse(anyhow!(
-                "Failed to list boot flags for container {}: {}",
-                &self.storage_record.container,
-                errmsg
-            ))
+        .map_err(|errmsg| AconfigdError::FailToListFlags {
+            container: self.storage_record.container.clone(),
+            errmsg,
         })?
         .into_iter()
         .filter(|f| f.package_name == package)
@@ -946,7 +869,7 @@ impl StorageFiles {
         for f in flags.iter() {
             let full_flag_name = f.package_name.clone() + "/" + &f.flag_name;
             let index =
-                flag_index.get(&full_flag_name).ok_or(AconfigdError::FailToParse(anyhow!(
+                flag_index.get(&full_flag_name).ok_or(AconfigdError::InternalError(anyhow!(
                     "Flag {}.{} appears in boot files but not in persist fliles",
                     &f.package_name,
                     &f.flag_name,
@@ -959,12 +882,9 @@ impl StorageFiles {
             &self.storage_record.persist_flag_map.display().to_string(),
             &self.storage_record.default_flag_val.display().to_string(),
         )
-        .map_err(|errmsg| {
-            AconfigdError::FailToParse(anyhow!(
-                "Failed to list default flags for container {}: {}",
-                &self.storage_record.container,
-                errmsg
-            ))
+        .map_err(|errmsg| AconfigdError::FailToListFlags {
+            container: self.storage_record.container.clone(),
+            errmsg,
         })?
         .into_iter()
         .filter(|f| f.package_name == package)
@@ -973,7 +893,7 @@ impl StorageFiles {
         for f in flags.iter() {
             let full_flag_name = f.package_name.clone() + "/" + &f.flag_name;
             let index =
-                flag_index.get(&full_flag_name).ok_or(AconfigdError::FailToParse(anyhow!(
+                flag_index.get(&full_flag_name).ok_or(AconfigdError::InternalError(anyhow!(
                     "Flag {}.{} appears in default files but not in persist fliles",
                     &f.package_name,
                     &f.flag_name,
@@ -1006,12 +926,9 @@ impl StorageFiles {
             &self.storage_record.persist_flag_val.display().to_string(),
             &self.storage_record.persist_flag_info.display().to_string(),
         )
-        .map_err(|errmsg| {
-            AconfigdError::FailToParse(anyhow!(
-                "Failed to list persist flags with info for container {}: {}",
-                &self.storage_record.container,
-                errmsg
-            ))
+        .map_err(|errmsg| AconfigdError::FailToListFlagsWithInfo {
+            container: self.storage_record.container.clone(),
+            errmsg,
         })?
         .into_iter()
         .map(|f| FlagSnapshot {
@@ -1038,12 +955,9 @@ impl StorageFiles {
             &self.storage_record.persist_flag_map.display().to_string(),
             &self.storage_record.boot_flag_val.display().to_string(),
         )
-        .map_err(|errmsg| {
-            AconfigdError::FailToParse(anyhow!(
-                "Failed to list boot flags for container {}: {}",
-                &self.storage_record.container,
-                errmsg
-            ))
+        .map_err(|errmsg| AconfigdError::FailToListFlags {
+            container: self.storage_record.container.clone(),
+            errmsg,
         })?
         .into_iter()
         .collect();
@@ -1051,7 +965,7 @@ impl StorageFiles {
         for f in flags.iter() {
             let full_flag_name = f.package_name.clone() + "/" + &f.flag_name;
             let index =
-                flag_index.get(&full_flag_name).ok_or(AconfigdError::FailToParse(anyhow!(
+                flag_index.get(&full_flag_name).ok_or(AconfigdError::InternalError(anyhow!(
                     "Flag {}.{} appears in boot files but not in persist fliles",
                     &f.package_name,
                     &f.flag_name,
@@ -1064,12 +978,9 @@ impl StorageFiles {
             &self.storage_record.persist_flag_map.display().to_string(),
             &self.storage_record.default_flag_val.display().to_string(),
         )
-        .map_err(|errmsg| {
-            AconfigdError::FailToParse(anyhow!(
-                "Failed to list default flags for container {}: {}",
-                &self.storage_record.container,
-                errmsg
-            ))
+        .map_err(|errmsg| AconfigdError::FailToListFlags {
+            container: self.storage_record.container.clone(),
+            errmsg,
         })?
         .into_iter()
         .collect();
@@ -1077,7 +988,7 @@ impl StorageFiles {
         for f in flags.iter() {
             let full_flag_name = f.package_name.clone() + "/" + &f.flag_name;
             let index =
-                flag_index.get(&full_flag_name).ok_or(AconfigdError::FailToParse(anyhow!(
+                flag_index.get(&full_flag_name).ok_or(AconfigdError::InternalError(anyhow!(
                     "Flag {}.{} appears in default files but not in persist fliles",
                     &f.package_name,
                     &f.flag_name,
