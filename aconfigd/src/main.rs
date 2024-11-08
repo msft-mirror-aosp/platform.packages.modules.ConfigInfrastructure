@@ -20,7 +20,6 @@
 
 use clap::Parser;
 use log::{error, info};
-use std::panic;
 
 mod aconfigd_commands;
 
