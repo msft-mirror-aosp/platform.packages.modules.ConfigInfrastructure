@@ -17,3 +17,12 @@ flag {
   is_fixed_read_only: true
   is_exported: true
 }
+
+flag {
+  name: "new_storage_public_write_api"
+  namespace: "core_experiments_team_internal"
+  description: "API flag for writing new storage"
+  bug: "372729920"
+  is_fixed_read_only: true
+  is_exported: true
+}
