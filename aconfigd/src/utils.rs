@@ -15,7 +15,6 @@
  */
 
 use crate::AconfigdError;
-use anyhow::anyhow;
 use openssl::hash::{Hasher, MessageDigest};
 use std::fs::File;
 use std::io::Read;
@@ -26,36 +25,26 @@ use std::path::Path;
 pub(crate) fn set_file_permission(file: &Path, mode: u32) -> Result<(), AconfigdError> {
     let perms = std::fs::Permissions::from_mode(mode);
     std::fs::set_permissions(file, perms).map_err(|errmsg| {
-        AconfigdError::FailToUpdateFilePerm(anyhow!(
-            "Failed to set file permission to 0444 for {}: {}",
-            file.display(),
-            errmsg
-        ))
+        AconfigdError::FailToUpdateFilePerm { file: file.display().to_string(), mode, errmsg }
     })?;
     Ok(())
 }
 
 /// Copy file
 pub(crate) fn copy_file(src: &Path, dst: &Path, mode: u32) -> Result<(), AconfigdError> {
-    std::fs::copy(src, dst).map_err(|errmsg| {
-        AconfigdError::FailToCopyFile(anyhow!(
-            "Failed to copy file from {} to {}: {}",
-            src.display(),
-            dst.display(),
-            errmsg
-        ))
+    std::fs::copy(src, dst).map_err(|errmsg| AconfigdError::FailToCopyFile {
+        src: src.display().to_string(),
+        dst: dst.display().to_string(),
+        errmsg,
     })?;
     set_file_permission(dst, mode)
 }
 
 /// Remove file
 pub(crate) fn remove_file(src: &Path) -> Result<(), AconfigdError> {
-    std::fs::remove_file(src).map_err(|errmsg| {
-        AconfigdError::FailToRemoveFile(anyhow!(
-            "Fail to remove file {}: {}",
-            src.display(),
-            errmsg
-        ))
+    std::fs::remove_file(src).map_err(|errmsg| AconfigdError::FailToRemoveFile {
+        file: src.display().to_string(),
+        errmsg,
     })
 }
 
@@ -65,19 +54,12 @@ pub(crate) fn read_pb_from_file<T: protobuf::Message>(file: &Path) -> Result<T, 
         return Ok(T::new());
     }
 
-    let data = std::fs::read(file).map_err(|errmsg| {
-        AconfigdError::FailToParse(anyhow!(
-            "Failed to read file {} to buffer: {}",
-            file.display(),
-            errmsg
-        ))
+    let data = std::fs::read(file).map_err(|errmsg| AconfigdError::FailToReadFile {
+        file: file.display().to_string(),
+        errmsg,
     })?;
     protobuf::Message::parse_from_bytes(data.as_ref()).map_err(|errmsg| {
-        AconfigdError::FailToParse(anyhow!(
-            "Failed to read file {} to buffer: {}",
-            file.display(),
-            errmsg
-        ))
+        AconfigdError::FailToParsePbFromBytes { file: file.display().to_string(), errmsg }
     })
 }
 
@@ -87,62 +69,41 @@ pub(crate) fn write_pb_to_file<T: protobuf::Message>(
     file: &Path,
 ) -> Result<(), AconfigdError> {
     let bytes = protobuf::Message::write_to_bytes(pb).map_err(|errmsg| {
-        AconfigdError::FailToSerializePb(anyhow!(
-            "Fail to serialize protobuf to bytes while writing to {}: {}",
-            file.display(),
-            errmsg
-        ))
+        AconfigdError::FailToSerializePb { file: file.display().to_string(), errmsg }
     })?;
-    std::fs::write(file, bytes).map_err(|errmsg| {
-        AconfigdError::FailToOverride(anyhow!(
-            "Fail to write protobuf bytes to file {}: {}",
-            file.display(),
-            errmsg
-        ))
+    std::fs::write(file, bytes).map_err(|errmsg| AconfigdError::FailToWriteFile {
+        file: file.display().to_string(),
+        errmsg,
     })?;
     Ok(())
 }
 
 /// The digest is returned as a hexadecimal string.
 pub(crate) fn get_files_digest(paths: &[&Path]) -> Result<String, AconfigdError> {
-    let mut hasher = Hasher::new(MessageDigest::sha256()).map_err(|errmsg| {
-        AconfigdError::FailToGetFilesDigest(anyhow!(
-            "Fail to create hasher for file digest: {}",
-            errmsg
-        ))
-    })?;
+    let mut hasher = Hasher::new(MessageDigest::sha256())
+        .map_err(|errmsg| AconfigdError::FailToGetHasherForDigest { errmsg })?;
     let mut buffer = [0; 1024];
     for path in paths {
-        let mut f = File::open(path).map_err(|errmsg| {
-            AconfigdError::FailToGetFilesDigest(anyhow!(
-                "Fail to open file {} for file digest: {}",
-                path.display(),
-                errmsg
-            ))
+        let mut f = File::open(path).map_err(|errmsg| AconfigdError::FailToOpenFile {
+            file: path.display().to_string(),
+            errmsg,
         })?;
         loop {
-            let n = f.read(&mut buffer[..]).map_err(|errmsg| {
-                AconfigdError::FailToGetFilesDigest(anyhow!(
-                    "Fail to read file {} contents for file digest: {}",
-                    path.display(),
-                    errmsg
-                ))
+            let n = f.read(&mut buffer[..]).map_err(|errmsg| AconfigdError::FailToReadFile {
+                file: path.display().to_string(),
+                errmsg,
             })?;
             if n == 0 {
                 break;
             }
-            hasher.update(&buffer).map_err(|errmsg| {
-                AconfigdError::FailToGetFilesDigest(anyhow!(
-                    "Fail to hash file {} contents for file digest: {}",
-                    path.display(),
-                    errmsg
-                ))
+            hasher.update(&buffer).map_err(|errmsg| AconfigdError::FailToHashFile {
+                file: path.display().to_string(),
+                errmsg,
             })?;
         }
     }
-    let digest: &[u8] = &hasher.finish().map_err(|errmsg| {
-        AconfigdError::FailToGetFilesDigest(anyhow!("Fail to get final file digest: {}", errmsg))
-    })?;
+    let digest: &[u8] =
+        &hasher.finish().map_err(|errmsg| AconfigdError::FailToGetDigest { errmsg })?;
     let mut xdigest = String::new();
     for x in digest {
         xdigest.push_str(format!("{:02x}", x).as_str());

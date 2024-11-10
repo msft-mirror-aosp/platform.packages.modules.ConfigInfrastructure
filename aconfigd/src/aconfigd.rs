@@ -23,8 +23,9 @@ use aconfigd_protos::{
     ProtoOTAFlagStagingMessage, ProtoPersistStorageRecords, ProtoRemoveLocalOverrideMessage,
     ProtoStorageRequestMessage, ProtoStorageRequestMessageMsg, ProtoStorageReturnMessage,
 };
-use anyhow::anyhow;
-use log::{log, Level};
+use log::{error, warn};
+use std::io::{Read, Write};
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 
 // Aconfigd that is capable of doing both one shot storage file init and socket service
@@ -59,15 +60,15 @@ impl Aconfigd {
             if boot_info_file.exists() {
                 remove_file(&boot_info_file)?;
             }
-            self.storage_manager.add_storage_files_from_pb(entry)?;
+            self.storage_manager.add_storage_files_from_pb(entry);
         }
 
         // get all the apex dirs to visit
         let mut dirs_to_visit = Vec::new();
         let apex_dir = PathBuf::from("/apex");
-        for entry in std::fs::read_dir(&apex_dir).map_err(|errmsg| {
-            AconfigdError::FailToReadDir(anyhow!("Fail to read /apex dir: {}", errmsg))
-        })? {
+        for entry in std::fs::read_dir(&apex_dir)
+            .map_err(|errmsg| AconfigdError::FailToReadApexDir { errmsg })?
+        {
             match entry {
                 Ok(entry) => {
                     let path = entry.path();
@@ -90,7 +91,7 @@ impl Aconfigd {
                     }
                 }
                 Err(errmsg) => {
-                    log!(Level::Warn, "failed to visit entry: {}", errmsg);
+                    warn!("failed to visit entry: {}", errmsg);
                 }
             }
         }
@@ -112,12 +113,9 @@ impl Aconfigd {
             }
 
             if std::fs::metadata(&default_flag_val)
-                .map_err(|errmsg| {
-                    AconfigdError::FailToGetFileMetadata(anyhow!(
-                        "Fail to get file {} metadata: {}",
-                        default_flag_val.display(),
-                        errmsg
-                    ))
+                .map_err(|errmsg| AconfigdError::FailToGetFileMetadata {
+                    file: default_flag_val.display().to_string(),
+                    errmsg,
                 })?
                 .len()
                 == 0
@@ -216,11 +214,9 @@ impl Aconfigd {
                 result.set_has_local_override(snapshot.has_local_override);
                 Ok(return_pb)
             }
-            None => Err(AconfigdError::FlagDoesNotExist(anyhow!(
-                "Flag {}.{} does not exist",
-                request_pb.package_name(),
-                request_pb.flag_name(),
-            ))),
+            None => Err(AconfigdError::FlagDoesNotExist {
+                flag: request_pb.package_name().to_string() + "." + request_pb.flag_name(),
+            }),
         }
     }
 
@@ -261,7 +257,9 @@ impl Aconfigd {
             Some(ProtoListStorageMessageMsg::PackageName(package)) => {
                 self.storage_manager.list_flags_in_package(package)
             }
-            _ => Err(AconfigdError::InvalidSocketRequest(anyhow!("Invalid list storage type num"))),
+            _ => Err(AconfigdError::InvalidSocketRequest {
+                errmsg: "Invalid list storage type".to_string(),
+            }),
         }?;
         let mut return_pb = ProtoStorageReturnMessage::new();
         let result = return_pb.mut_list_storage_message();
@@ -286,7 +284,7 @@ impl Aconfigd {
     }
 
     /// Handle socket request
-    pub fn handle_socket_request(
+    fn handle_socket_request(
         &mut self,
         request_pb: &ProtoStorageRequestMessage,
     ) -> Result<ProtoStorageReturnMessage, AconfigdError> {
@@ -312,8 +310,42 @@ impl Aconfigd {
             Some(ProtoStorageRequestMessageMsg::ListStorageMessage(_)) => {
                 self.handle_list_storage(request_pb.list_storage_message())
             }
-            _ => Err(AconfigdError::InvalidSocketRequest(anyhow!("Invalid socket request type"))),
+            _ => Err(AconfigdError::InvalidSocketRequest { errmsg: String::new() }),
         }
+    }
+
+    /// Handle socket request from a unix stream
+    pub fn handle_socket_request_from_stream(
+        &mut self,
+        stream: &mut UnixStream,
+    ) -> Result<(), AconfigdError> {
+        let mut request = Vec::new();
+        stream
+            .read_to_end(&mut request)
+            .map_err(|errmsg| AconfigdError::FailToReadFromSocket { errmsg })?;
+
+        let request = &protobuf::Message::parse_from_bytes(&request[..]).map_err(|errmsg| {
+            AconfigdError::FailToParsePbFromBytes { file: "socket request".to_string(), errmsg }
+        })?;
+
+        let return_pb = match self.handle_socket_request(request) {
+            Ok(return_msg) => return_msg,
+            Err(errmsg) => {
+                error!("failed to handle socket request: {}", errmsg);
+                let mut return_msg = ProtoStorageReturnMessage::new();
+                return_msg
+                    .set_error_message(format!("failed to handle socket request: {:?}", errmsg));
+                return_msg
+            }
+        };
+
+        let bytes = protobuf::Message::write_to_bytes(&return_pb).map_err(|errmsg| {
+            AconfigdError::FailToSerializePb { file: "socket".to_string(), errmsg }
+        })?;
+
+        stream.write_all(&bytes).map_err(|errmsg| AconfigdError::FailToWriteToSocket { errmsg })?;
+
+        Ok(())
     }
 }
 
@@ -326,6 +358,9 @@ mod tests {
         ProtoFlagOverride, ProtoFlagOverrideType, ProtoLocalFlagOverrides,
         ProtoPersistStorageRecord,
     };
+    use std::net::Shutdown;
+    use std::os::fd::{FromRawFd, IntoRawFd, RawFd};
+    use tempfile::tempfile;
 
     fn create_mock_aconfigd(root_dir: &StorageRootDirMock) -> Aconfigd {
         Aconfigd::new(root_dir.tmp_dir.path(), &root_dir.flags_dir.join("storage_records.pb"))
@@ -500,7 +535,7 @@ mod tests {
         let return_msg = aconfigd.handle_socket_request(&request);
         assert!(return_msg.is_err());
         if let Err(errmsg) = return_msg {
-            assert_eq!("cannot find container", format!("{}", errmsg));
+            assert_eq!("cannot find container for package not_exist", format!("{}", errmsg));
         }
     }
 
@@ -613,7 +648,7 @@ mod tests {
         let return_msg = aconfigd.handle_socket_request(&request);
         assert!(return_msg.is_err());
         if let Err(errmsg) = return_msg {
-            assert_eq!("flag does not exist", format!("{}", errmsg));
+            assert_eq!("flag not_exist.not_exist does not exist", format!("{}", errmsg));
         }
     }
 
@@ -736,7 +771,7 @@ mod tests {
         let return_msg = aconfigd.handle_socket_request(&request);
         assert!(return_msg.is_err());
         if let Err(errmsg) = return_msg {
-            assert_eq!("cannot find container", format!("{}", errmsg));
+            assert_eq!("cannot find container for package abc", format!("{}", errmsg));
         }
     }
 
@@ -841,7 +876,7 @@ mod tests {
         let return_msg = aconfigd.handle_socket_request(&request);
         assert!(return_msg.is_err());
         if let Err(errmsg) = return_msg {
-            assert_eq!("cannot find container", format!("{}", errmsg));
+            assert_eq!("cannot find container for package not_exist", format!("{}", errmsg));
         }
     }
 
@@ -877,7 +912,43 @@ mod tests {
         let return_msg = aconfigd.handle_socket_request(&request);
         assert!(return_msg.is_err());
         if let Err(errmsg) = return_msg {
-            assert_eq!("cannot find container", format!("{}", errmsg));
+            assert_eq!("fail to get storage files for not_exist", format!("{}", errmsg));
+        }
+    }
+
+    #[test]
+    fn test_aconfigd_unix_stream() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut aconfigd = create_mock_aconfigd(&root_dir);
+        add_mockup_container_storage(&container, &mut aconfigd);
+        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+
+        let mut request = ProtoStorageRequestMessage::new();
+        let actual_request = request.mut_flag_query_message();
+        actual_request.set_package_name("abc".to_string());
+        actual_request.set_flag_name("def".to_string());
+        let bytes = protobuf::Message::write_to_bytes(&request).unwrap();
+
+        let (mut stream1, mut stream2) = UnixStream::pair().unwrap();
+        stream1.write_all(&bytes).unwrap();
+        stream1.shutdown(Shutdown::Write).unwrap();
+        let result = aconfigd.handle_socket_request_from_stream(&mut stream2);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_negative_aconfigd_unix_stream() {
+        let root_dir = StorageRootDirMock::new();
+        let mut aconfigd = create_mock_aconfigd(&root_dir);
+
+        let (mut stream1, mut stream2) = UnixStream::pair().unwrap();
+        stream1.write_all(b"hello world").unwrap();
+        stream1.shutdown(Shutdown::Write).unwrap();
+        let result = aconfigd.handle_socket_request_from_stream(&mut stream2);
+        assert!(result.is_err());
+        if let Err(errmsg) = result {
+            assert_eq!("fail to parse to protobuf from bytes for socket request: Error(WireError(UnexpectedWireType(EndGroup)))", format!("{}", errmsg));
         }
     }
 }

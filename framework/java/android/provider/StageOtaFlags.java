@@ -153,8 +153,21 @@ public final class StageOtaFlags {
         StorageRequestMessage.OTAFlagStagingMessage.newBuilder().setBuildId(buildId);
     for (Map.Entry<String, Boolean> flagAndValue : flags.entrySet()) {
       String qualifiedFlagName = flagAndValue.getKey();
-      String packageName = qualifiedFlagName.substring(0, qualifiedFlagName.lastIndexOf("."));
-      String flagName = qualifiedFlagName.substring(qualifiedFlagName.lastIndexOf(".") + 1);
+
+      // aconfig flags follow a package_name [dot] flag_name convention and will always have
+      // a [dot] character in the flag name.
+      //
+      // If a [dot] character wasn't found it's likely because this was a legacy flag. We make no
+      // assumptions here and still attempt to stage these flags with aconfigd and let it decide
+      // whether to use the flag / discard it.
+      String packageName = "";
+      String flagName = qualifiedFlagName;
+      int idx = qualifiedFlagName.lastIndexOf(".");
+      if (idx != -1) {
+        packageName = qualifiedFlagName.substring(0, qualifiedFlagName.lastIndexOf("."));
+        flagName = qualifiedFlagName.substring(qualifiedFlagName.lastIndexOf(".") + 1);
+      }
+
       String value = flagAndValue.getValue() ? "true" : "false";
       FlagOverride override =
           FlagOverride.newBuilder()
