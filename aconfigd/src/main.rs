@@ -20,7 +20,6 @@
 
 use clap::Parser;
 use log::{error, info};
-use std::panic;
 
 mod aconfigd_commands;
 
@@ -43,6 +42,16 @@ enum Command {
 }
 
 fn main() {
+    // SAFETY: nobody has taken ownership of the inherited FDs yet.
+    // This needs to be called before logger initialization as logger setup will create a
+    // file descriptor.
+    unsafe {
+        if let Err(errmsg) = rustutils::inherited_fd::init_once() {
+            error!("failed to run init_once for inherited fds: {:?}.", errmsg);
+            std::process::exit(1);
+        }
+    };
+
     // setup android logger, direct to logcat
     android_logger::init_once(
         android_logger::Config::default()
@@ -50,11 +59,6 @@ fn main() {
             .with_max_level(log::LevelFilter::Trace),
     );
     info!("starting aconfigd_mainline commands.");
-
-    // redirect panic messages to logcat.
-    panic::set_hook(Box::new(|panic_info| {
-        error!("{}", panic_info);
-    }));
 
     let cli = Cli::parse();
     let command_return = match cli.command {

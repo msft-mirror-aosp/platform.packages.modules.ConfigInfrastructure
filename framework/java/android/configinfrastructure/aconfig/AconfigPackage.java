@@ -18,20 +18,11 @@ package android.configinfrastructure.aconfig;
 
 import static android.provider.flags.Flags.FLAG_NEW_STORAGE_PUBLIC_API;
 
+import android.aconfig.storage.AconfigPackageImpl;
 import android.aconfig.storage.AconfigStorageException;
-import android.aconfig.storage.FlagTable;
-import android.aconfig.storage.FlagValueList;
-import android.aconfig.storage.PackageTable;
+import android.aconfig.storage.StorageFileProvider;
 import android.annotation.FlaggedApi;
 import android.annotation.NonNull;
-import android.os.StrictMode;
-
-import java.io.Closeable;
-import java.io.File;
-import java.nio.MappedByteBuffer;
-import java.nio.channels.FileChannel;
-import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
 
 /**
  * An {@code aconfig} package containing the enabled state of its flags.
@@ -45,131 +36,49 @@ import java.nio.file.StandardOpenOption;
  */
 @FlaggedApi(FLAG_NEW_STORAGE_PUBLIC_API)
 public class AconfigPackage {
-    private static final String MAP_PATH = "/metadata/aconfig/maps/";
-    private static final String BOOT_PATH = "/metadata/aconfig/boot/";
-    private static final String SYSTEM_MAP = "/metadata/aconfig/maps/system.package.map";
-    private static final String PMAP_FILE_EXT = ".package.map";
 
-    private FlagTable mFlagTable;
-    private FlagValueList mFlagValueList;
+    private AconfigPackageImpl impl;
 
-    private int mPackageBooleanStartOffset = -1;
-    private int mPackageId = -1;
+    private AconfigPackage() {}
 
     /**
-     * This method will load a Aconfig Package from Aconfig Storage. If the package is not found or
-     * the Aconfig storage is not available on the device, an instance will still be created, but it
-     * will not be backed by a real Aconfig package in storage.
+     * Loads an Aconfig Package from Aconfig Storage.
      *
-     * @param packageName name of the flag package
-     * @return an instance of AconfigPackage
+     * <p>This method attempts to load the specified Aconfig package.
+     *
+     * @param packageName The name of the Aconfig package to load.
+     * @return An instance of {@link AconfigPackage}, which may be empty if the package is not found
+     *     in the container.
+     * @throws AconfigStorageReadException if there is an error reading from Aconfig Storage, such
+     *     as if the storage system is not found, the package is not found, or there is an error
+     *     reading the storage file. The specific error code can be obtained using {@link
+     *     AconfigStorageReadException#getErrorCode()}.
      */
     @FlaggedApi(FLAG_NEW_STORAGE_PUBLIC_API)
     public static @NonNull AconfigPackage load(@NonNull String packageName) {
         AconfigPackage aPackage = new AconfigPackage();
-        aPackage.init(packageName);
+        try {
+            aPackage.impl =
+                    AconfigPackageImpl.load(packageName, StorageFileProvider.getDefaultProvider());
+        } catch (AconfigStorageException e) {
+            throw new AconfigStorageReadException(e.getErrorCode(), e);
+        }
         return aPackage;
     }
 
     /**
-     * Get the value of a boolean flag.
+     * Retrieves the value of a boolean flag.
      *
-     * <p>This method retrieves the value of a boolean flag within the Aconfig Package. If the
-     * instance is backed by a real Aconfig Package, and the flag is found in the Aconfig storage,
-     * it returns the actual flag value. Otherwise, it returns the provided defaultValue.
+     * <p>This method retrieves the value of the specified flag. If the flag exists within the
+     * loaded Aconfig Package, its value is returned. Otherwise, the provided `defaultValue` is
+     * returned.
      *
-     * @param flagName flag name of the given flag (without a package name prefix)
-     * @param defaultValue default value if the flag is not found or the AconfigPackage instance is
-     *     not backed by real Aconfig package.
-     * @return Boolean value indicates the flag value
+     * @param flagName The name of the flag (excluding any package name prefix).
+     * @param defaultValue The value to return if the flag is not found.
+     * @return The boolean value of the flag, or `defaultValue` if the flag is not found.
      */
     @FlaggedApi(FLAG_NEW_STORAGE_PUBLIC_API)
     public boolean getBooleanFlagValue(@NonNull String flagName, boolean defaultValue) {
-        // no such package in all containers
-        if (mPackageId < 0) return defaultValue;
-        FlagTable.Node fNode = mFlagTable.get(mPackageId, flagName);
-        // no such flag in this package
-        if (fNode == null) return defaultValue;
-        int index = fNode.getFlagIndex() + mPackageBooleanStartOffset;
-        return mFlagValueList.getBoolean(index);
-    }
-
-    private void init(String packageName) {
-        StrictMode.ThreadPolicy oldPolicy = StrictMode.allowThreadDiskReads();
-
-        try {
-            // check system container first for optimization
-            PackageTable pTable = null;
-            PackageTable.Node pNode = null;
-
-            // for devices don't have new storage directly return
-            if (!(new File(MAP_PATH).exists())) {
-                return;
-            }
-
-            // for devices don't have flag files on the system partition
-            if (new File(SYSTEM_MAP).exists()) {
-                pTable = PackageTable.fromBytes(mapStorageFile(SYSTEM_MAP));
-                pNode = pTable.get(packageName);
-            }
-            String[] mapFiles = {};
-            if (pNode == null) {
-                mapFiles = new File(MAP_PATH).list();
-                // return if the metadata folder doesn't exist
-                if (mapFiles == null) return;
-            }
-
-            for (String file : mapFiles) {
-                if (!file.endsWith(PMAP_FILE_EXT)) {
-                    continue;
-                }
-                pTable = PackageTable.fromBytes(mapStorageFile(MAP_PATH + file));
-                pNode = pTable.get(packageName);
-                if (pNode != null) {
-                    break;
-                }
-            }
-
-            if (pNode == null) {
-                // for the case package is not found in all container, return instead of throwing
-                // error
-                return;
-            }
-
-            String container = pTable.getHeader().getContainer();
-            mFlagTable = FlagTable.fromBytes(mapStorageFile(MAP_PATH + container + ".flag.map"));
-            mFlagValueList =
-                    FlagValueList.fromBytes(mapStorageFile(BOOT_PATH + container + ".val"));
-            mPackageBooleanStartOffset = pNode.getBooleanStartIndex();
-            mPackageId = pNode.getPackageId();
-        } catch (Exception e) {
-            throw new AconfigStorageException("Fail to create AconfigPackage", e);
-        } finally {
-            StrictMode.setThreadPolicy(oldPolicy);
-        }
-    }
-
-    // Map a storage file given file path
-    private static MappedByteBuffer mapStorageFile(String file) {
-        FileChannel channel = null;
-        try {
-            channel = FileChannel.open(Paths.get(file), StandardOpenOption.READ);
-            return channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size());
-        } catch (Exception e) {
-            throw new AconfigStorageException(
-                    String.format("Fail to mmap storage file %s", file), e);
-        } finally {
-            quietlyDispose(channel);
-        }
-    }
-
-    private static void quietlyDispose(Closeable closable) {
-        try {
-            if (closable != null) {
-                closable.close();
-            }
-        } catch (Exception e) {
-            // no need to care, at least as of now
-        }
+        return impl.getBooleanFlagValue(flagName, defaultValue);
     }
 }
