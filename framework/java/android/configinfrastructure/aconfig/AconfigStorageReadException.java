@@ -21,7 +21,7 @@ import static android.provider.flags.Flags.FLAG_NEW_STORAGE_PUBLIC_API;
 import android.annotation.FlaggedApi;
 import android.annotation.IntDef;
 import android.annotation.NonNull;
-import android.annotation.SystemApi;
+import android.compat.annotation.UnsupportedAppUsage;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -67,9 +67,13 @@ public class AconfigStorageReadException extends RuntimeException {
      * Error code indicating that the fingerprint of the Aconfig Storage file does not match the
      * expected fingerprint.
      *
+     * <p><b>This constant is not part of the public API and should be used by Acnofig Flag
+     * internally </b> It is intended for internal use only and may be changed or removed without
+     * notice.
+     *
      * @hide
      */
-    @FlaggedApi(FLAG_NEW_STORAGE_PUBLIC_API)
+    @UnsupportedAppUsage
     public static final int ERROR_FILE_FINGERPRINT_MISMATCH = 5;
 
     /** @hide */
