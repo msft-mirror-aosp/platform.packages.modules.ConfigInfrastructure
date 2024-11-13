@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package android.configinfrastructure.aconfig.test;
+package android.os.flagging.test;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
@@ -25,8 +25,8 @@ import android.aconfig.storage.FlagTable;
 import android.aconfig.storage.FlagValueList;
 import android.aconfig.storage.PackageTable;
 import android.aconfig.storage.StorageFileProvider;
-import android.configinfrastructure.aconfig.AconfigPackage;
-import android.configinfrastructure.aconfig.AconfigStorageReadException;
+import android.os.flagging.AconfigPackage;
+import android.os.flagging.AconfigStorageReadException;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;

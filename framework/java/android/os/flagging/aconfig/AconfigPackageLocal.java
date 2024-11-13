@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package android.configinfrastructure.aconfig;
+package android.os.flagging;
 
 import android.aconfig.storage.AconfigStorageException;
 import android.aconfig.storage.FlagValueList;
