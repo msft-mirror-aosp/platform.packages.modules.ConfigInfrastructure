@@ -142,4 +142,7 @@ pub enum AconfigdError {
 
     #[error("fail to write to socket unix stream: {:?}", .errmsg)]
     FailToWriteToSocket { errmsg: std::io::Error },
+
+    #[error("fail to read device build fingerpirnt: {:?}", .errmsg)]
+    FailToReadBuildFingerPrint { errmsg: rustutils::system_properties::PropertyWatcherError },
 }
