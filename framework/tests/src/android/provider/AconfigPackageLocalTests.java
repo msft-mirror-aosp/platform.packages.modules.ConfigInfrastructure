@@ -25,7 +25,7 @@ import android.aconfig.storage.FlagTable;
 import android.aconfig.storage.FlagValueList;
 import android.aconfig.storage.PackageTable;
 import android.aconfig.storage.StorageFileProvider;
-import android.configinfrastructure.aconfig.AconfigPackage;
+import android.configinfrastructure.aconfig.AconfigPackageLocal;
 import android.configinfrastructure.aconfig.AconfigStorageReadException;
 
 import org.junit.Test;
@@ -38,11 +38,11 @@ import java.util.List;
 import java.util.Map;
 
 @RunWith(JUnit4.class)
-public class AconfigPackageTests {
+public class AconfigPackageLocalTests {
     @Test
-    public void testExternalAconfigPackageInstance() throws IOException {
+    public void testExternalAconfigPackageLocalInstance() throws IOException {
         List<parsed_flag> flags = DeviceProtos.loadAndParseFlagProtos();
-        Map<String, AconfigPackage> readerMap = new HashMap<>();
+        Map<String, AconfigPackageLocal> readerMap = new HashMap<>();
         StorageFileProvider fp = StorageFileProvider.getDefaultProvider();
 
         for (parsed_flag flag : flags) {
@@ -57,27 +57,61 @@ public class AconfigPackageTests {
             FlagTable.Node fNode = fTable.get(pNode.getPackageId(), flagName);
             FlagValueList fList = fp.getFlagValueList(container);
 
-            boolean rVal = fList.getBoolean(pNode.getBooleanStartIndex() + fNode.getFlagIndex());
+            int index = pNode.getBooleanStartIndex() + fNode.getFlagIndex();
+            boolean rVal = fList.getBoolean(index);
 
-            AconfigPackage reader = readerMap.get(packageName);
+            long fingerprint = pNode.getPackageFingerprint();
+
+            AconfigPackageLocal reader = readerMap.get(packageName);
             if (reader == null) {
-                reader = AconfigPackage.load(packageName);
+                reader = AconfigPackageLocal.load(container, packageName, fingerprint);
                 readerMap.put(packageName, reader);
             }
-            boolean jVal = reader.getBooleanFlagValue(flagName, false);
+            boolean jVal = reader.getBooleanFlagValue(fNode.getFlagIndex());
 
             assertEquals(rVal, jVal);
         }
     }
 
     @Test
-    public void testAconfigPackage_load_withError() {
-        // load fake package
-        AconfigPackage p;
-        AconfigStorageReadException e =
+    public void testAconfigPackage_load_withError() throws IOException {
+        AconfigStorageReadException e;
+        // container not found fake_container
+        e =
                 assertThrows(
                         AconfigStorageReadException.class,
-                        () -> AconfigPackage.load("fake_package"));
+                        () -> AconfigPackageLocal.load("fake_container", "fake_package", 0));
+        assertEquals(AconfigStorageReadException.ERROR_CANNOT_READ_STORAGE_FILE, e.getErrorCode());
+
+        // package not found
+        e =
+                assertThrows(
+                        AconfigStorageReadException.class,
+                        () -> AconfigPackageLocal.load("system", "fake_container", 0));
         assertEquals(AconfigStorageReadException.ERROR_PACKAGE_NOT_FOUND, e.getErrorCode());
+
+        // fingerprint doesn't match
+
+        List<parsed_flag> flags = DeviceProtos.loadAndParseFlagProtos();
+        StorageFileProvider fp = StorageFileProvider.getDefaultProvider();
+
+        parsed_flag flag = flags.get(0);
+
+        String container = flag.container;
+        String packageName = flag.package_;
+
+        PackageTable pTable = fp.getPackageTable(container);
+        PackageTable.Node pNode = pTable.get(packageName);
+        long fingerprint = pNode.getPackageFingerprint();
+        if (pNode.hasPackageFingerprint()) {
+            e =
+                    assertThrows(
+                            AconfigStorageReadException.class,
+                            () ->
+                                    AconfigPackageLocal.load(
+                                            container, packageName, fingerprint + 1));
+            assertEquals(
+                    AconfigStorageReadException.ERROR_FILE_FINGERPRINT_MISMATCH, e.getErrorCode());
+        }
     }
 }

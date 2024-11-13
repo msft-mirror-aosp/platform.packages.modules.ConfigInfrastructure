@@ -39,6 +39,9 @@ java_sdk_library {
         "//packages/modules/ConfigInfrastructure:__subpackages__",
         "//frameworks/base/ravenwood",
     ],
+    libs: [
+        "unsupportedappusage",
+    ],
     static_libs: [
         "configinfra_framework_flags_java_lib",
         "modules-utils-build",
