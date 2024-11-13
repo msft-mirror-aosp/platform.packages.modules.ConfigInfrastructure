@@ -21,7 +21,7 @@ use aconfigd_protos::{
     ProtoFlagOverrideType, ProtoLocalFlagOverrides, ProtoPersistStorageRecord,
     ProtoPersistStorageRecords,
 };
-use anyhow::anyhow;
+use log::debug;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -49,21 +49,16 @@ impl StorageFilesManager {
     }
 
     /// Add storage files based on a storage record pb entry
-    pub(crate) fn add_storage_files_from_pb(
-        &mut self,
-        pb: &ProtoPersistStorageRecord,
-    ) -> Result<(), AconfigdError> {
+    pub(crate) fn add_storage_files_from_pb(&mut self, pb: &ProtoPersistStorageRecord) {
         if self.all_storage_files.contains_key(pb.container()) {
-            return Err(AconfigdError::FailToAddContainer(anyhow!(
-                "Failed to add storage files from container {}, already exists in aconfigd",
-                pb.container(),
-            )));
+            debug!(
+                "Ignored request to add storage files from pb for {}, already exists",
+                pb.container()
+            );
+            return;
         }
-
         self.all_storage_files
             .insert(String::from(pb.container()), StorageFiles::from_pb(pb, &self.root_dir));
-
-        Ok(())
     }
 
     /// Add a new container's storage files
@@ -76,10 +71,10 @@ impl StorageFilesManager {
         default_flag_info: &Path,
     ) -> Result<&mut StorageFiles, AconfigdError> {
         if self.all_storage_files.contains_key(container) {
-            return Err(AconfigdError::FailToAddContainer(anyhow!(
-                "Failed to add storage files from container {}, already exists in aconfigd",
-                container,
-            )));
+            debug!(
+                "Ignored request to add storage files from container {}, already exists",
+                container
+            );
         }
 
         self.all_storage_files.insert(
@@ -94,10 +89,9 @@ impl StorageFilesManager {
             )?,
         );
 
-        self.all_storage_files.get_mut(container).ok_or(AconfigdError::FailToAddContainer(anyhow!(
-            "Failed to get storage files for container {}",
-            container,
-        )))
+        self.all_storage_files
+            .get_mut(container)
+            .ok_or(AconfigdError::FailToGetStorageFiles { container: container.to_string() })
     }
 
     /// Update a container's storage files in the case of container update
@@ -109,12 +103,9 @@ impl StorageFilesManager {
         default_flag_val: &Path,
         default_flag_info: &Path,
     ) -> Result<(), AconfigdError> {
-        let mut storage_files = self.get_storage_files(container).ok_or(
-            AconfigdError::FailToUpdateContainer(anyhow!(
-                "Failed to update storage files for container {}, it is not in aconfigd",
-                container,
-            )),
-        )?;
+        let mut storage_files = self
+            .get_storage_files(container)
+            .ok_or(AconfigdError::FailToGetStorageFiles { container: container.to_string() })?;
 
         // backup overrides
         let server_overrides = storage_files.get_all_server_overrides()?;
@@ -198,10 +189,9 @@ impl StorageFilesManager {
         &mut self,
         container: &str,
     ) -> Result<(), AconfigdError> {
-        let storage_files =
-            self.get_storage_files(container).ok_or(AconfigdError::FailToCreateBootFiles(
-                anyhow!("Failed to get storage files for container {}", container),
-            ))?;
+        let storage_files = self
+            .get_storage_files(container)
+            .ok_or(AconfigdError::FailToGetStorageFiles { container: container.to_string() })?;
         storage_files.create_boot_storage_files()?;
         Ok(())
     }
@@ -210,10 +200,9 @@ impl StorageFilesManager {
     pub(crate) fn reset_all_storage(&mut self) -> Result<(), AconfigdError> {
         let all_containers = self.all_storage_files.keys().cloned().collect::<Vec<String>>();
         for container in all_containers {
-            let storage_files =
-                self.get_storage_files(&container).ok_or(AconfigdError::FailToUpdateContainer(
-                    anyhow!("Failed to get storage files for container {}", &container),
-                ))?;
+            let storage_files = self
+                .get_storage_files(&container)
+                .ok_or(AconfigdError::FailToGetStorageFiles { container: container.to_string() })?;
 
             let record = storage_files.storage_record().clone();
             let container_available = storage_files.has_boot_copy();
@@ -257,14 +246,13 @@ impl StorageFilesManager {
         value: &str,
         override_type: ProtoFlagOverrideType,
     ) -> Result<(), AconfigdError> {
-        let container = self.get_container(package)?.ok_or(AconfigdError::FailToFindContainer(
-            anyhow!("Failed to find container for flag {}.{}", package, flag),
-        ))?;
+        let container = self
+            .get_container(package)?
+            .ok_or(AconfigdError::FailToFindContainer { package: package.to_string() })?;
 
-        let storage_files =
-            self.get_storage_files(&container).ok_or(AconfigdError::FailToFindContainer(
-                anyhow!("Failed to find container for flag {}.{}", package, flag),
-            ))?;
+        let storage_files = self
+            .get_storage_files(&container)
+            .ok_or(AconfigdError::FailToGetStorageFiles { container: container.to_string() })?;
 
         let context = storage_files.get_package_flag_context(package, flag)?;
         match override_type {
@@ -335,14 +323,13 @@ impl StorageFilesManager {
         package: &str,
         flag: &str,
     ) -> Result<(), AconfigdError> {
-        let container = self.get_container(package)?.ok_or(AconfigdError::FailToFindContainer(
-            anyhow!("Failed to find container for flag {}.{}", package, flag),
-        ))?;
+        let container = self
+            .get_container(package)?
+            .ok_or(AconfigdError::FailToFindContainer { package: package.to_string() })?;
 
-        let storage_files =
-            self.get_storage_files(&container).ok_or(AconfigdError::FailToFindContainer(
-                anyhow!("Failed to get storage files for container {}", container,),
-            ))?;
+        let storage_files = self
+            .get_storage_files(&container)
+            .ok_or(AconfigdError::FailToGetStorageFiles { container: container.to_string() })?;
 
         let context = storage_files.get_package_flag_context(package, flag)?;
         storage_files.remove_local_override(&context)
@@ -364,10 +351,9 @@ impl StorageFilesManager {
     ) -> Result<Option<FlagSnapshot>, AconfigdError> {
         match self.get_container(package)? {
             Some(container) => {
-                let storage_files =
-                    self.get_storage_files(&container).ok_or(AconfigdError::FailToOverride(
-                        anyhow!("Failed to get container {} storage files", container,),
-                    ))?;
+                let storage_files = self.get_storage_files(&container).ok_or(
+                    AconfigdError::FailToGetStorageFiles { container: container.to_string() },
+                )?;
 
                 storage_files.get_flag_snapshot(package, flag)
             }
@@ -380,14 +366,13 @@ impl StorageFilesManager {
         &mut self,
         package: &str,
     ) -> Result<Vec<FlagSnapshot>, AconfigdError> {
-        let container = self.get_container(package)?.ok_or(AconfigdError::FailToFindContainer(
-            anyhow!("Failed to find container for package {}", package),
-        ))?;
+        let container = self
+            .get_container(package)?
+            .ok_or(AconfigdError::FailToFindContainer { package: package.to_string() })?;
 
-        let storage_files =
-            self.get_storage_files(&container).ok_or(AconfigdError::FailToFindContainer(
-                anyhow!("Failed to get container {} storage files", container,),
-            ))?;
+        let storage_files = self
+            .get_storage_files(&container)
+            .ok_or(AconfigdError::FailToGetStorageFiles { container: container.to_string() })?;
 
         storage_files.list_flags_in_package(package)
     }
@@ -397,10 +382,9 @@ impl StorageFilesManager {
         &mut self,
         container: &str,
     ) -> Result<Vec<FlagSnapshot>, AconfigdError> {
-        let storage_files =
-            self.get_storage_files(container).ok_or(AconfigdError::FailToFindContainer(
-                anyhow!("Failed to get container {} storage files", container,),
-            ))?;
+        let storage_files = self
+            .get_storage_files(&container)
+            .ok_or(AconfigdError::FailToGetStorageFiles { container: container.to_string() })?;
 
         storage_files.list_all_flags()
     }
@@ -438,7 +422,7 @@ mod tests {
         pb.set_flag_info(String::from("some_flag_info"));
         pb.set_digest(String::from("abc"));
 
-        manager.add_storage_files_from_pb(&pb).unwrap();
+        manager.add_storage_files_from_pb(&pb);
         assert_eq!(manager.all_storage_files.len(), 1);
         assert_eq!(
             manager.all_storage_files.get("some_container").unwrap(),
