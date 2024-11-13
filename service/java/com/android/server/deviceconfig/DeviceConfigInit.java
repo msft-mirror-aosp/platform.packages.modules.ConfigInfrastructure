@@ -2,6 +2,7 @@ package com.android.server.deviceconfig;
 
 import static com.android.server.deviceconfig.Flags.enableRebootNotification;
 import static com.android.server.deviceconfig.Flags.enableUnattendedReboot;
+import static com.android.server.deviceconfig.Flags.useDescriptiveLogMessage;
 
 import java.io.IOException;
 import java.io.FileDescriptor;
@@ -42,6 +43,7 @@ public class DeviceConfigInit {
     private static final String VENDOR_FLAGS_PATH = "/vendor/etc/aconfig_flags.pb";
 
     private static final String CONFIGURATION_NAMESPACE = "configuration";
+    private static final String OVERRIDES_NAMESPACE = "device_config_overrides";
     private static final String BOOT_NOTIFICATION_FLAG =
             "ConfigInfraFlags__enable_boot_notification";
     private static final String UNATTENDED_REBOOT_FLAG =
@@ -73,6 +75,19 @@ public class DeviceConfigInit {
         /** @hide */
         @Override
         public void onStart() {
+            DeviceConfig.Properties overrideProperties =
+                    DeviceConfig.getProperties(OVERRIDES_NAMESPACE);
+            for (String flagName : overrideProperties.getKeyset()) {
+                String fullName = overrideProperties.getNamespace() + "/" + flagName;
+                String value = overrideProperties.getString(flagName, null);
+                if (useDescriptiveLogMessage()) {
+                    Slog.i(TAG, "DeviceConfig sticky local override is set: "
+                        + fullName + "=" + value);
+                } else {
+                    Slog.i(TAG, "DeviceConfig sticky override is set: " + fullName + "=" + value);
+                }
+            }
+
             boolean notificationEnabled =
                     DeviceConfig.getBoolean(CONFIGURATION_NAMESPACE, BOOT_NOTIFICATION_FLAG, false);
             if (notificationEnabled && enableRebootNotification()) {
