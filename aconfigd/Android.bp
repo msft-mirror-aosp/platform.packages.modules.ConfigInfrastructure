@@ -13,7 +13,7 @@
 // limitations under the License.
 
 rust_defaults {
-    name: "aconfigd_mainline.defaults",
+    name: "aconfigd_rust.defaults",
     edition: "2021",
     lints: "none",
     rustlibs: [
@@ -28,6 +28,7 @@ rust_defaults {
         "liblog_rust",
         "libprotobuf",
         "libthiserror",
+        "librustutils",
     ],
     apex_available: [
         "com.android.configinfrastructure",
@@ -36,29 +37,28 @@ rust_defaults {
 }
 
 rust_library {
-    name: "libaconfigd_mainline",
-    crate_name: "aconfigd_mainline",
-    defaults: ["aconfigd_mainline.defaults"],
+    name: "libaconfigd_rust",
+    crate_name: "aconfigd_rust",
+    defaults: ["aconfigd_rust.defaults"],
     srcs: ["src/lib.rs"],
 }
 
 rust_binary {
     name: "aconfigd-mainline",
-    defaults: ["aconfigd_mainline.defaults"],
+    defaults: ["aconfigd_rust.defaults"],
     srcs: ["src/main.rs"],
     rustlibs: [
-        "libaconfigd_mainline",
+        "libaconfigd_rust",
         "libandroid_logger",
-        "librustutils",
         "liblibc",
     ],
 }
 
-rust_test_host {
-    name: "libaconfigd_mainline.test",
+rust_test {
+    name: "libaconfigd_rust.test",
     team: "trendy_team_android_core_experiments",
     test_suites: ["general-tests"],
-    defaults: ["aconfigd_mainline.defaults"],
+    defaults: ["aconfigd_rust.defaults"],
     srcs: ["src/lib.rs"],
     rustlibs: [
         "libtempfile",
