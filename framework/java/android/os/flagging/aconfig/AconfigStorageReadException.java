@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package android.configinfrastructure.aconfig;
+package android.os.flagging;
 
 import static android.provider.flags.Flags.FLAG_NEW_STORAGE_PUBLIC_API;
 

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use aconfigd_mainline::aconfigd::Aconfigd;
+use aconfigd_rust::aconfigd::Aconfigd;
 use anyhow::{bail, Result};
 use log::{debug, error};
 use std::os::fd::AsRawFd;
@@ -23,7 +23,7 @@ use std::path::Path;
 
 const ACONFIGD_SOCKET: &str = "aconfigd_mainline";
 const ACONFIGD_ROOT_DIR: &str = "/metadata/aconfig";
-const STORAGE_RECORDS: &str = "/metadata/aconfig/storage_records.pb";
+const STORAGE_RECORDS: &str = "/metadata/aconfig/mainline_storage_records.pb";
 const ACONFIGD_SOCKET_BACKLOG: i32 = 8;
 
 /// start aconfigd socket service
