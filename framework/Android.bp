@@ -27,8 +27,8 @@ java_sdk_library {
         "android.internal.configinfra",
         "android.provider",
         "android.provider.flags",
+        "android.provider.x",
         "android.provider.aidl",
-
         "android.os.flagging",
     ],
     apex_available: [
