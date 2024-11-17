@@ -46,6 +46,70 @@ impl Aconfigd {
         }
     }
 
+    /// Initialize platform storage files, create or update existing persist storage files and
+    /// create new boot storage files for each platform partitions
+    pub fn initialize_platform_storage(&mut self) -> Result<(), AconfigdError> {
+        let boot_dir = self.root_dir.join("boot");
+        let pb = read_pb_from_file::<ProtoPersistStorageRecords>(&self.persist_storage_records)?;
+        for entry in pb.records.iter() {
+            let boot_value_file = boot_dir.join(entry.container().to_owned() + ".val");
+            let boot_info_file = boot_dir.join(entry.container().to_owned() + ".info");
+            if boot_value_file.exists() {
+                remove_file(&boot_value_file)?;
+            }
+            if boot_info_file.exists() {
+                remove_file(&boot_info_file)?;
+            }
+            self.storage_manager.add_storage_files_from_pb(entry);
+        }
+
+        for container in ["system", "product", "vendor"] {
+            let aconfig_dir = PathBuf::from("/".to_string() + container + "/etc/aconfig");
+            let default_package_map = aconfig_dir.join("package.map");
+            let default_flag_map = aconfig_dir.join("flag.map");
+            let default_flag_val = aconfig_dir.join("flag.val");
+            let default_flag_info = aconfig_dir.join("flag.info");
+
+            if !default_package_map.exists()
+                || !default_flag_val.exists()
+                || !default_flag_val.exists()
+                || !default_flag_map.exists()
+            {
+                continue;
+            }
+
+            if std::fs::metadata(&default_flag_val)
+                .map_err(|errmsg| AconfigdError::FailToGetFileMetadata {
+                    file: default_flag_val.display().to_string(),
+                    errmsg,
+                })?
+                .len()
+                == 0
+            {
+                continue;
+            }
+
+            self.storage_manager.add_or_update_container_storage_files(
+                container,
+                &default_package_map,
+                &default_flag_map,
+                &default_flag_val,
+                &default_flag_info,
+            )?;
+
+            self.storage_manager
+                .write_persist_storage_records_to_file(&self.persist_storage_records)?;
+        }
+
+        self.storage_manager.apply_staged_ota_flags()?;
+
+        for container in ["system", "product", "vendor"] {
+            self.storage_manager.apply_all_staged_overrides(container)?;
+        }
+
+        Ok(())
+    }
+
     /// Initialize mainline storage files, create or update existing persist storage files and
     /// create new boot storage files for each mainline container
     pub fn initialize_mainline_storage(&mut self) -> Result<(), AconfigdError> {
@@ -134,7 +198,7 @@ impl Aconfigd {
             self.storage_manager
                 .write_persist_storage_records_to_file(&self.persist_storage_records)?;
 
-            self.storage_manager.create_storage_boot_copy(container)?;
+            self.storage_manager.apply_all_staged_overrides(container)?;
         }
 
         Ok(())
@@ -183,7 +247,7 @@ impl Aconfigd {
 
         self.storage_manager
             .write_persist_storage_records_to_file(&self.persist_storage_records)?;
-        self.storage_manager.create_storage_boot_copy(request_pb.container())?;
+        self.storage_manager.apply_all_staged_overrides(request_pb.container())?;
 
         let mut return_pb = ProtoStorageReturnMessage::new();
         return_pb.mut_new_storage_message();
@@ -447,7 +511,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
         add_mockup_container_storage(&container, &mut aconfigd);
-        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
 
         let mut request = ProtoStorageRequestMessage::new();
         let actual_request = request.mut_flag_override_message();
@@ -473,7 +537,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
         add_mockup_container_storage(&container, &mut aconfigd);
-        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
 
         let mut request = ProtoStorageRequestMessage::new();
         let actual_request = request.mut_flag_override_message();
@@ -499,7 +563,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
         add_mockup_container_storage(&container, &mut aconfigd);
-        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
 
         let mut request = ProtoStorageRequestMessage::new();
         let actual_request = request.mut_flag_override_message();
@@ -525,7 +589,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
         add_mockup_container_storage(&container, &mut aconfigd);
-        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
 
         let mut request = ProtoStorageRequestMessage::new();
         let actual_request = request.mut_flag_override_message();
@@ -575,7 +639,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
         add_mockup_container_storage(&container, &mut aconfigd);
-        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
 
         let mut flag =
             get_flag_snapshot(&mut aconfigd, "com.android.aconfig.storage.test_1", "enabled_rw");
@@ -639,7 +703,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
         add_mockup_container_storage(&container, &mut aconfigd);
-        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
 
         let mut request = ProtoStorageRequestMessage::new();
         let actual_request = request.mut_flag_query_message();
@@ -658,7 +722,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
         add_mockup_container_storage(&container, &mut aconfigd);
-        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
 
         let mut request = ProtoStorageRequestMessage::new();
         let actual_request = request.mut_flag_override_message();
@@ -703,7 +767,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
         add_mockup_container_storage(&container, &mut aconfigd);
-        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
 
         let mut request = ProtoStorageRequestMessage::new();
         let actual_request = request.mut_flag_override_message();
@@ -752,7 +816,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
         add_mockup_container_storage(&container, &mut aconfigd);
-        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
 
         let mut request = ProtoStorageRequestMessage::new();
         let actual_request = request.mut_flag_override_message();
@@ -781,7 +845,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
         add_mockup_container_storage(&container, &mut aconfigd);
-        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
 
         let mut request = ProtoStorageRequestMessage::new();
         let actual_request = request.mut_flag_override_message();
@@ -827,7 +891,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
         add_mockup_container_storage(&container, &mut aconfigd);
-        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
 
         let mut request = ProtoStorageRequestMessage::new();
         let actual_request = request.mut_list_storage_message();
@@ -868,7 +932,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
         add_mockup_container_storage(&container, &mut aconfigd);
-        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
 
         let mut request = ProtoStorageRequestMessage::new();
         let actual_request = request.mut_list_storage_message();
@@ -886,7 +950,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
         add_mockup_container_storage(&container, &mut aconfigd);
-        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
 
         let mut request = ProtoStorageRequestMessage::new();
         let actual_request = request.mut_list_storage_message();
@@ -904,7 +968,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
         add_mockup_container_storage(&container, &mut aconfigd);
-        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
 
         let mut request = ProtoStorageRequestMessage::new();
         let actual_request = request.mut_list_storage_message();
@@ -922,7 +986,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
         add_mockup_container_storage(&container, &mut aconfigd);
-        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
 
         let mut request = ProtoStorageRequestMessage::new();
         let actual_request = request.mut_flag_query_message();
