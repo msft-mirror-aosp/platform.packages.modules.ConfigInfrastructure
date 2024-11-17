@@ -1,4 +1,12 @@
 // Signature format: 2.0
+package android.os.flagging {
+
+  @FlaggedApi("android.provider.flags.stage_flags_for_build") public final class ConfigInfrastructureFrameworkInitializer {
+    method @FlaggedApi("android.provider.flags.stage_flags_for_build") public static void registerServiceWrappers();
+  }
+
+}
+
 package android.provider {
 
   public final class DeviceConfig {
