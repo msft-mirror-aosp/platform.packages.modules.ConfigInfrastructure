@@ -42,13 +42,12 @@ java_sdk_library {
     ],
     libs: [
         "unsupportedappusage",
-        "aconfig_storage_reader_java",
     ],
     static_libs: [
         "aconfigd_java_proto_lite_lib",
         "configinfra_framework_flags_java_lib",
         "modules-utils-build",
-        "aconfig_storage_file_java",
+        "aconfig_storage_reader_java",
     ],
     aconfig_declarations: [
         "configinfra_framework_flags",

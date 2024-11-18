@@ -73,6 +73,7 @@ public class AconfigPackageTests {
     @Test
     public void testAconfigPackage_load_withError() {
         // load fake package
+        AconfigPackage p;
         AconfigStorageReadException e =
                 assertThrows(
                         AconfigStorageReadException.class,
