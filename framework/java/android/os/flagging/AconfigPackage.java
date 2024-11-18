@@ -18,8 +18,6 @@ package android.os.flagging;
 
 import static android.provider.flags.Flags.FLAG_NEW_STORAGE_PUBLIC_API;
 
-import android.aconfig.storage.AconfigPackageImpl;
-import android.aconfig.storage.AconfigStorageException;
 import android.aconfig.storage.StorageFileProvider;
 import android.annotation.FlaggedApi;
 import android.annotation.NonNull;
@@ -37,9 +35,16 @@ import android.annotation.NonNull;
 @FlaggedApi(FLAG_NEW_STORAGE_PUBLIC_API)
 public class AconfigPackage {
 
-    private AconfigPackageImpl impl;
+    private static final String[] PLATFORM_CONTAINERS = {"system", "product", "vendor"};
 
-    private AconfigPackage() {}
+    private final PlatformAconfigPackageInternal mPlatformPackage;
+    private final AconfigPackageInternal mAconfigPackage;
+
+    private AconfigPackage(
+            PlatformAconfigPackageInternal pPackage, AconfigPackageInternal aPackage) {
+        mPlatformPackage = pPackage;
+        mAconfigPackage = aPackage;
+    }
 
     /**
      * Loads an Aconfig Package from Aconfig Storage.
@@ -56,14 +61,28 @@ public class AconfigPackage {
      */
     @FlaggedApi(FLAG_NEW_STORAGE_PUBLIC_API)
     public static @NonNull AconfigPackage load(@NonNull String packageName) {
-        AconfigPackage aPackage = new AconfigPackage();
-        try {
-            aPackage.impl =
-                    AconfigPackageImpl.load(packageName, StorageFileProvider.getDefaultProvider());
-        } catch (AconfigStorageException e) {
-            throw new AconfigStorageReadException(e.getErrorCode(), e);
+        StorageFileProvider fileProvider = StorageFileProvider.getDefaultProvider();
+        // First try to load from platform containers.
+        for (String container : PLATFORM_CONTAINERS) {
+            PlatformAconfigPackageInternal pPackage =
+                    PlatformAconfigPackageInternal.load(container, packageName);
+            if (pPackage.getException() == null) {
+                return new AconfigPackage(pPackage, null);
+            }
         }
-        return aPackage;
+
+        // If not found in platform containers, search all package map files.
+        for (String container : fileProvider.listContainers(PLATFORM_CONTAINERS)) {
+            AconfigPackageInternal aPackage = AconfigPackageInternal.load(container, packageName);
+            if (aPackage.getException() == null) {
+                return new AconfigPackage(null, aPackage);
+            }
+        }
+
+        // Package not found.
+        throw new AconfigStorageReadException(
+                AconfigStorageReadException.ERROR_PACKAGE_NOT_FOUND,
+                "package " + packageName + " cannot be found on the device");
     }
 
     /**
@@ -79,6 +98,9 @@ public class AconfigPackage {
      */
     @FlaggedApi(FLAG_NEW_STORAGE_PUBLIC_API)
     public boolean getBooleanFlagValue(@NonNull String flagName, boolean defaultValue) {
-        return impl.getBooleanFlagValue(flagName, defaultValue);
+        if (mPlatformPackage != null) {
+            return mPlatformPackage.getBooleanFlagValue(flagName, defaultValue);
+        }
+        return mAconfigPackage.getBooleanFlagValue(flagName, defaultValue);
     }
 }
