@@ -43,7 +43,7 @@ import java.lang.annotation.Retention;
 @FlaggedApi(Flags.FLAG_STAGE_FLAGS_FOR_BUILD)
 public final class StageOtaFlags {
   private static String LOG_TAG = "StageOtaFlags";
-  private static final String SOCKET_ADDRESS = "aconfigd";
+  private static final String SOCKET_ADDRESS = "aconfigd_system";
   private static final String STORAGE_MARKER_FILE_PATH
         = "/metadata/aconfig/boot/enable_only_new_storage";
 
