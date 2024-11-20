@@ -1560,20 +1560,19 @@ public final class DeviceConfig {
         }
     }
 
-    // TODO(b/367787970): cannot use reference to DUMP_ARG_NAMESPACE in the javadoc below, hence the
-    // usage of {@code --namespace}
     // NOTE: this API is only used by the framework code, but using MODULE_LIBRARIES causes a
     // build-time error on CtsDeviceConfigTestCases, so it's using PRIVILEGED_APPS.
     /**
-     * Dumps internal state into the given {@code fd} or {@code pw}.
+     * Dumps internal state into the given {@code fd} or {@code printWriter}.
      *
-     * <p><b>Note:</b> Currently the only supported argument is {@code --namespace}, which will
-     * filter the output using a substring of the next argument. But other arguments might be
+     * <p><b>Note:</b> Currently the only supported argument is
+     * {@link DeviceConfig#DUMP_ARG_NAMESPACE}, which will filter the output using a substring of
+     * the next argument. But other arguments might be
      * dynamically added in the future, without documentation - this method is meant only for
      * debugging purposes, and should not be used as a formal API.
      *
      * @param fd file descriptor that will output the dump state. Typically used for binary dumps.
-     * @param pw print writer that will output the dump state. Typically used for formatted text.
+     * @param printWriter print writer that will output the dump state. Typically used for formatted text.
      * @param prefix prefix added to each line
      * @param args (optional) arguments passed by {@code dumpsys}.
      *
@@ -1582,11 +1581,14 @@ public final class DeviceConfig {
     @SystemApi(client = SystemApi.Client.PRIVILEGED_APPS)
     @FlaggedApi(Flags.FLAG_DUMP_IMPROVEMENTS)
     @RequiresPermission(DUMP)
-    public static void dump(@NonNull ParcelFileDescriptor fd, @NonNull PrintWriter pw,
+    public static void dump(@NonNull ParcelFileDescriptor fd, @NonNull PrintWriter printWriter,
             @NonNull String dumpPrefix, @Nullable String[] args) {
         if (DEBUG) {
             Slog.d(TAG, "dump(): args=" + Arrays.toString(args));
         }
+        Objects.requireNonNull(fd, "fd cannot be null");
+        Objects.requireNonNull(printWriter, "printWriter cannot be null");
+
         Comparator<OnPropertiesChangedListener> comparator = (o1, o2) -> o1.toString()
                 .compareTo(o2.toString());
         TreeMap<String, Set<OnPropertiesChangedListener>> listenersByNamespace  =
@@ -1629,14 +1631,14 @@ public final class DeviceConfig {
                 uniqueListeners.add(listener);
             }
         }
-        pw.printf("%s%d listeners for %d namespaces:\n", dumpPrefix, uniqueListeners.size(),
+        printWriter.printf("%s%d listeners for %d namespaces:\n", dumpPrefix, uniqueListeners.size(),
                 listenersByNamespace.size());
         for (var entry : listenersByNamespace.entrySet()) {
             var namespace = entry.getKey();
             var listeners = entry.getValue();
-            pw.printf("%s%s: %d listeners\n", dumpPrefix, namespace, listeners.size());
+            printWriter.printf("%s%s: %d listeners\n", dumpPrefix, namespace, listeners.size());
             for (var listener : listeners) {
-                pw.printf("%s%s%s\n", dumpPrefix, dumpPrefix, listener);
+                printWriter.printf("%s%s%s\n", dumpPrefix, dumpPrefix, listener);
             }
         }
     }
