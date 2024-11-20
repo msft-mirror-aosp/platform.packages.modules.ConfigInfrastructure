@@ -57,7 +57,9 @@ rust_binary {
 rust_test {
     name: "libaconfigd_rust.test",
     team: "trendy_team_android_core_experiments",
-    test_suites: ["general-tests"],
+    test_suites: [
+        "general-tests",
+    ],
     defaults: ["aconfigd_rust.defaults"],
     srcs: ["src/lib.rs"],
     rustlibs: [
@@ -73,4 +75,5 @@ rust_test {
         "./tests/data/container_with_more_flags.flag.val",
         "./tests/data/container_with_more_flags.flag.info",
     ],
+    require_root: true
 }
