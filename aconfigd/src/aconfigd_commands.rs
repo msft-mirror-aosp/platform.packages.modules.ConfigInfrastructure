@@ -39,6 +39,7 @@ pub fn start_socket() -> Result<()> {
     let listener = UnixListener::from(fd);
 
     let mut aconfigd = Aconfigd::new(Path::new(ACONFIGD_ROOT_DIR), Path::new(STORAGE_RECORDS));
+    aconfigd.initialize_from_storage_record()?;
 
     debug!("start waiting for a new client connection through socket.");
     for stream in listener.incoming() {
@@ -60,7 +61,10 @@ pub fn start_socket() -> Result<()> {
 /// initialize mainline module storage files
 pub fn init() -> Result<()> {
     let mut aconfigd = Aconfigd::new(Path::new(ACONFIGD_ROOT_DIR), Path::new(STORAGE_RECORDS));
-    Ok(aconfigd.initialize_mainline_storage()?)
+    aconfigd.remove_boot_files()?;
+    aconfigd.initialize_from_storage_record()?;
+    aconfigd.initialize_mainline_storage()?;
+    Ok(())
 }
 
 /// initialize bootstrapped mainline module storage files
