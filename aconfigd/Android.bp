@@ -32,6 +32,7 @@ rust_defaults {
     ],
     apex_available: [
         "com.android.configinfrastructure",
+        "//apex_available:platform",
     ],
     min_sdk_version: "34",
 }
