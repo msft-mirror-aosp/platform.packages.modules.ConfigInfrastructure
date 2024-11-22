@@ -41,7 +41,7 @@ java_sdk_library {
     ],
     libs: [
         "unsupportedappusage",
-        "aconfig_storage_reader_java",
+        "aconfig_storage_stub",
     ],
     static_libs: [
         "configinfra_framework_flags_java_lib",
