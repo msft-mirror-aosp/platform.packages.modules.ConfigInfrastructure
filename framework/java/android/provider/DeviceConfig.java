@@ -1803,6 +1803,16 @@ public final class DeviceConfig {
     }
 
     /**
+     * Returns the list of namespaces in which all flags can be written with adb as non-root.
+     * @hide
+     */
+    @SystemApi
+    @FlaggedApi(Flags.FLAG_DEVICE_CONFIG_WRITABLE_NAMESPACES_API)
+    public static @NonNull Set<String> getAdbWritableNamespaces() {
+        return WritableNamespaces.ALLOWLIST;
+    }
+
+    /**
      * Interface for monitoring changes to properties. Implementations will receive callbacks when
      * properties change, including a {@link Properties} object which contains a single namespace
      * and all of the properties which changed for that namespace. This includes properties which
