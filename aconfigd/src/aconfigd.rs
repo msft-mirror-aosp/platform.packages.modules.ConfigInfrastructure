@@ -46,9 +46,8 @@ impl Aconfigd {
         }
     }
 
-    /// Initialize platform storage files, create or update existing persist storage files and
-    /// create new boot storage files for each platform partitions
-    pub fn initialize_platform_storage(&mut self) -> Result<(), AconfigdError> {
+    /// Remove old boot storage record
+    pub fn remove_boot_files(&mut self) -> Result<(), AconfigdError> {
         let boot_dir = self.root_dir.join("boot");
         let pb = read_pb_from_file::<ProtoPersistStorageRecords>(&self.persist_storage_records)?;
         for entry in pb.records.iter() {
@@ -60,9 +59,23 @@ impl Aconfigd {
             if boot_info_file.exists() {
                 remove_file(&boot_info_file)?;
             }
+        }
+        Ok(())
+    }
+
+    /// Initialize aconfigd from persist storage records
+    pub fn initialize_from_storage_record(&mut self) -> Result<(), AconfigdError> {
+        let boot_dir = self.root_dir.join("boot");
+        let pb = read_pb_from_file::<ProtoPersistStorageRecords>(&self.persist_storage_records)?;
+        for entry in pb.records.iter() {
             self.storage_manager.add_storage_files_from_pb(entry);
         }
+        Ok(())
+    }
 
+    /// Initialize platform storage files, create or update existing persist storage files and
+    /// create new boot storage files for each platform partitions
+    pub fn initialize_platform_storage(&mut self) -> Result<(), AconfigdError> {
         for container in ["system", "product", "vendor"] {
             let aconfig_dir = PathBuf::from("/".to_string() + container + "/etc/aconfig");
             let default_package_map = aconfig_dir.join("package.map");
@@ -115,20 +128,6 @@ impl Aconfigd {
     /// Initialize mainline storage files, create or update existing persist storage files and
     /// create new boot storage files for each mainline container
     pub fn initialize_mainline_storage(&mut self) -> Result<(), AconfigdError> {
-        let boot_dir = self.root_dir.join("boot");
-        let pb = read_pb_from_file::<ProtoPersistStorageRecords>(&self.persist_storage_records)?;
-        for entry in pb.records.iter() {
-            let boot_value_file = boot_dir.join(entry.container().to_owned() + ".val");
-            let boot_info_file = boot_dir.join(entry.container().to_owned() + ".info");
-            if boot_value_file.exists() {
-                remove_file(&boot_value_file)?;
-            }
-            if boot_info_file.exists() {
-                remove_file(&boot_info_file)?;
-            }
-            self.storage_manager.add_storage_files_from_pb(entry);
-        }
-
         // get all the apex dirs to visit
         let mut dirs_to_visit = Vec::new();
         let apex_dir = PathBuf::from("/apex");
