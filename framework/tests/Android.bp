@@ -22,7 +22,7 @@ android_test {
     static_libs: [
         "aconfig_device_paths_java",
         "androidx.test.rules",
-        "aconfig_storage_reader_java",
+        "aconfig_storage_file_java",
         "junit",
     ],
     libs: [
