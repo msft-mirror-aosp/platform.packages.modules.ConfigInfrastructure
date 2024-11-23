@@ -384,14 +384,21 @@ impl Aconfigd {
         &mut self,
         stream: &mut UnixStream,
     ) -> Result<(), AconfigdError> {
-        let mut request = Vec::new();
+        let mut length_buffer = [0u8; 4];
         stream
-            .read_to_end(&mut request)
+            .read_exact(&mut length_buffer)
+            .map_err(|errmsg| AconfigdError::FailToReadFromSocket { errmsg })?;
+        let mut message_length = u32::from_be_bytes(length_buffer);
+
+        let mut request_buffer = vec![0u8; message_length as usize];
+        stream
+            .read_exact(&mut request_buffer)
             .map_err(|errmsg| AconfigdError::FailToReadFromSocket { errmsg })?;
 
-        let request = &protobuf::Message::parse_from_bytes(&request[..]).map_err(|errmsg| {
-            AconfigdError::FailToParsePbFromBytes { file: "socket request".to_string(), errmsg }
-        })?;
+        let request =
+            &protobuf::Message::parse_from_bytes(&request_buffer[..]).map_err(|errmsg| {
+                AconfigdError::FailToParsePbFromBytes { file: "socket request".to_string(), errmsg }
+            })?;
 
         let return_pb = match self.handle_socket_request(request) {
             Ok(return_msg) => return_msg,
@@ -408,6 +415,11 @@ impl Aconfigd {
             AconfigdError::FailToSerializePb { file: "socket".to_string(), errmsg }
         })?;
 
+        message_length = bytes.len() as u32;
+        length_buffer = message_length.to_be_bytes();
+        stream
+            .write_all(&length_buffer)
+            .map_err(|errmsg| AconfigdError::FailToWriteToSocket { errmsg })?;
         stream.write_all(&bytes).map_err(|errmsg| AconfigdError::FailToWriteToSocket { errmsg })?;
 
         Ok(())
@@ -996,6 +1008,8 @@ mod tests {
         let bytes = protobuf::Message::write_to_bytes(&request).unwrap();
 
         let (mut stream1, mut stream2) = UnixStream::pair().unwrap();
+        let length_bytes = (bytes.len() as u32).to_be_bytes();
+        stream1.write_all(&length_bytes).unwrap();
         stream1.write_all(&bytes).unwrap();
         stream1.shutdown(Shutdown::Write).unwrap();
         let result = aconfigd.handle_socket_request_from_stream(&mut stream2);
@@ -1008,6 +1022,8 @@ mod tests {
         let mut aconfigd = create_mock_aconfigd(&root_dir);
 
         let (mut stream1, mut stream2) = UnixStream::pair().unwrap();
+        let length_bytes = 11_u32.to_be_bytes();
+        stream1.write_all(&length_bytes).unwrap();
         stream1.write_all(b"hello world").unwrap();
         stream1.shutdown(Shutdown::Write).unwrap();
         let result = aconfigd.handle_socket_request_from_stream(&mut stream2);
