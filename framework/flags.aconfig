@@ -26,3 +26,11 @@ flag {
   is_fixed_read_only: true
   is_exported: true
 }
+
+flag {
+  name: "device_config_writable_namespaces_api"
+  namespace: "psap_ai"
+  description: "API flag for accessing DeviceConfig writable namespaces"
+  bug: "364083026"
+  is_exported: true
+}

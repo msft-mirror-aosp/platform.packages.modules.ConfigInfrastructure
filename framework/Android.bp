@@ -42,7 +42,7 @@ java_sdk_library {
     ],
     libs: [
         "unsupportedappusage",
-        "aconfig_storage_reader_java",
+        "aconfig_storage_stub",
     ],
     static_libs: [
         "aconfigd_java_proto_lite_lib",
