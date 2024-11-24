@@ -40,6 +40,9 @@ public class DeviceConfigBootstrapValuesTest {
     private static final String WRITE_DEVICE_CONFIG_PERMISSION =
             "android.permission.WRITE_DEVICE_CONFIG";
 
+    private static final String WRITE_ALLOWLISTED_DEVICE_CONFIG_PERMISSION =
+            "android.permission.WRITE_ALLOWLISTED_DEVICE_CONFIG";
+
     private static final String READ_DEVICE_CONFIG_PERMISSION =
             "android.permission.READ_DEVICE_CONFIG";
 
@@ -49,7 +52,8 @@ public class DeviceConfigBootstrapValuesTest {
     public void assertParsesFiles() throws IOException {
         assumeTrue(SdkLevel.isAtLeastV());
         InstrumentationRegistry.getInstrumentation().getUiAutomation().adoptShellPermissionIdentity(
-                WRITE_DEVICE_CONFIG_PERMISSION, READ_DEVICE_CONFIG_PERMISSION);
+                WRITE_DEVICE_CONFIG_PERMISSION, WRITE_ALLOWLISTED_DEVICE_CONFIG_PERMISSION,
+                READ_DEVICE_CONFIG_PERMISSION);
 
         DeviceConfigBootstrapValues values = new DeviceConfigBootstrapValues(PATH_1);
         values.applyValuesIfNeeded();
