@@ -23,7 +23,7 @@ use aconfigd_protos::{
     ProtoOTAFlagStagingMessage, ProtoPersistStorageRecords, ProtoRemoveLocalOverrideMessage,
     ProtoStorageRequestMessage, ProtoStorageRequestMessageMsg, ProtoStorageReturnMessage,
 };
-use log::{error, warn};
+use log::{debug, error, warn};
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
@@ -46,9 +46,8 @@ impl Aconfigd {
         }
     }
 
-    /// Initialize platform storage files, create or update existing persist storage files and
-    /// create new boot storage files for each platform partitions
-    pub fn initialize_platform_storage(&mut self) -> Result<(), AconfigdError> {
+    /// Remove old boot storage record
+    pub fn remove_boot_files(&mut self) -> Result<(), AconfigdError> {
         let boot_dir = self.root_dir.join("boot");
         let pb = read_pb_from_file::<ProtoPersistStorageRecords>(&self.persist_storage_records)?;
         for entry in pb.records.iter() {
@@ -60,9 +59,23 @@ impl Aconfigd {
             if boot_info_file.exists() {
                 remove_file(&boot_info_file)?;
             }
+        }
+        Ok(())
+    }
+
+    /// Initialize aconfigd from persist storage records
+    pub fn initialize_from_storage_record(&mut self) -> Result<(), AconfigdError> {
+        let boot_dir = self.root_dir.join("boot");
+        let pb = read_pb_from_file::<ProtoPersistStorageRecords>(&self.persist_storage_records)?;
+        for entry in pb.records.iter() {
             self.storage_manager.add_storage_files_from_pb(entry);
         }
+        Ok(())
+    }
 
+    /// Initialize platform storage files, create or update existing persist storage files and
+    /// create new boot storage files for each platform partitions
+    pub fn initialize_platform_storage(&mut self) -> Result<(), AconfigdError> {
         for container in ["system", "product", "vendor"] {
             let aconfig_dir = PathBuf::from("/".to_string() + container + "/etc/aconfig");
             let default_package_map = aconfig_dir.join("package.map");
@@ -71,10 +84,11 @@ impl Aconfigd {
             let default_flag_info = aconfig_dir.join("flag.info");
 
             if !default_package_map.exists()
-                || !default_flag_val.exists()
-                || !default_flag_val.exists()
                 || !default_flag_map.exists()
+                || !default_flag_val.exists()
+                || !default_flag_info.exists()
             {
+                debug!("skip {} initialization due to missing storage files", container);
                 continue;
             }
 
@@ -86,6 +100,7 @@ impl Aconfigd {
                 .len()
                 == 0
             {
+                debug!("skip {} initialization due to zero sized storage files", container);
                 continue;
             }
 
@@ -113,20 +128,6 @@ impl Aconfigd {
     /// Initialize mainline storage files, create or update existing persist storage files and
     /// create new boot storage files for each mainline container
     pub fn initialize_mainline_storage(&mut self) -> Result<(), AconfigdError> {
-        let boot_dir = self.root_dir.join("boot");
-        let pb = read_pb_from_file::<ProtoPersistStorageRecords>(&self.persist_storage_records)?;
-        for entry in pb.records.iter() {
-            let boot_value_file = boot_dir.join(entry.container().to_owned() + ".val");
-            let boot_info_file = boot_dir.join(entry.container().to_owned() + ".info");
-            if boot_value_file.exists() {
-                remove_file(&boot_value_file)?;
-            }
-            if boot_info_file.exists() {
-                remove_file(&boot_info_file)?;
-            }
-            self.storage_manager.add_storage_files_from_pb(entry);
-        }
-
         // get all the apex dirs to visit
         let mut dirs_to_visit = Vec::new();
         let apex_dir = PathBuf::from("/apex");
@@ -383,14 +384,21 @@ impl Aconfigd {
         &mut self,
         stream: &mut UnixStream,
     ) -> Result<(), AconfigdError> {
-        let mut request = Vec::new();
+        let mut length_buffer = [0u8; 4];
         stream
-            .read_to_end(&mut request)
+            .read_exact(&mut length_buffer)
+            .map_err(|errmsg| AconfigdError::FailToReadFromSocket { errmsg })?;
+        let mut message_length = u32::from_be_bytes(length_buffer);
+
+        let mut request_buffer = vec![0u8; message_length as usize];
+        stream
+            .read_exact(&mut request_buffer)
             .map_err(|errmsg| AconfigdError::FailToReadFromSocket { errmsg })?;
 
-        let request = &protobuf::Message::parse_from_bytes(&request[..]).map_err(|errmsg| {
-            AconfigdError::FailToParsePbFromBytes { file: "socket request".to_string(), errmsg }
-        })?;
+        let request =
+            &protobuf::Message::parse_from_bytes(&request_buffer[..]).map_err(|errmsg| {
+                AconfigdError::FailToParsePbFromBytes { file: "socket request".to_string(), errmsg }
+            })?;
 
         let return_pb = match self.handle_socket_request(request) {
             Ok(return_msg) => return_msg,
@@ -407,6 +415,11 @@ impl Aconfigd {
             AconfigdError::FailToSerializePb { file: "socket".to_string(), errmsg }
         })?;
 
+        message_length = bytes.len() as u32;
+        length_buffer = message_length.to_be_bytes();
+        stream
+            .write_all(&length_buffer)
+            .map_err(|errmsg| AconfigdError::FailToWriteToSocket { errmsg })?;
         stream.write_all(&bytes).map_err(|errmsg| AconfigdError::FailToWriteToSocket { errmsg })?;
 
         Ok(())
@@ -995,6 +1008,8 @@ mod tests {
         let bytes = protobuf::Message::write_to_bytes(&request).unwrap();
 
         let (mut stream1, mut stream2) = UnixStream::pair().unwrap();
+        let length_bytes = (bytes.len() as u32).to_be_bytes();
+        stream1.write_all(&length_bytes).unwrap();
         stream1.write_all(&bytes).unwrap();
         stream1.shutdown(Shutdown::Write).unwrap();
         let result = aconfigd.handle_socket_request_from_stream(&mut stream2);
@@ -1007,6 +1022,8 @@ mod tests {
         let mut aconfigd = create_mock_aconfigd(&root_dir);
 
         let (mut stream1, mut stream2) = UnixStream::pair().unwrap();
+        let length_bytes = 11_u32.to_be_bytes();
+        stream1.write_all(&length_bytes).unwrap();
         stream1.write_all(b"hello world").unwrap();
         stream1.shutdown(Shutdown::Write).unwrap();
         let result = aconfigd.handle_socket_request_from_stream(&mut stream2);
@@ -1014,5 +1031,70 @@ mod tests {
         if let Err(errmsg) = result {
             assert_eq!("fail to parse to protobuf from bytes for socket request: Error(WireError(UnexpectedWireType(EndGroup)))", format!("{}", errmsg));
         }
+    }
+
+    #[test]
+    fn test_initialize_platform_storage_fresh_install() {
+        let root_dir = StorageRootDirMock::new();
+        let mut aconfigd = create_mock_aconfigd(&root_dir);
+        aconfigd.initialize_platform_storage().unwrap();
+        assert!(aconfigd.persist_storage_records.exists());
+        let pb = read_pb_from_file::<ProtoPersistStorageRecords>(&aconfigd.persist_storage_records)
+            .unwrap();
+        assert_eq!(pb.records.len(), 3);
+
+        for container in ["system", "product", "vendor"] {
+            let aconfig_dir = PathBuf::from("/".to_string() + container + "/etc/aconfig");
+            let default_package_map = aconfig_dir.join("package.map");
+            let default_flag_map = aconfig_dir.join("flag.map");
+            let default_flag_val = aconfig_dir.join("flag.val");
+            let default_flag_info = aconfig_dir.join("flag.info");
+
+            let persist_package_map =
+                root_dir.maps_dir.join(container.to_string() + ".package.map");
+            let persist_flag_map = root_dir.maps_dir.join(container.to_string() + ".flag.map");
+            let persist_flag_val = root_dir.flags_dir.join(container.to_string() + ".val");
+            let persist_flag_info = root_dir.flags_dir.join(container.to_string() + ".info");
+            let boot_flag_val = root_dir.boot_dir.join(container.to_string() + ".val");
+            let boot_flag_info = root_dir.boot_dir.join(container.to_string() + ".info");
+            let local_overrides =
+                root_dir.flags_dir.join(container.to_string() + "_local_overrides.pb");
+
+            assert!(has_same_content(&persist_package_map, &default_package_map));
+            assert!(has_same_content(&persist_flag_map, &default_flag_map));
+            assert!(has_same_content(&persist_flag_val, &default_flag_val));
+            assert!(has_same_content(&persist_flag_info, &default_flag_info));
+            assert!(has_same_content(&boot_flag_val, &default_flag_val));
+            assert!(has_same_content(&boot_flag_info, &default_flag_info));
+            assert!(local_overrides.exists());
+
+            let mut entry = ProtoPersistStorageRecord::new();
+            entry.set_version(1);
+            entry.set_container(container.to_string());
+            entry.set_package_map(default_package_map.display().to_string());
+            entry.set_flag_map(default_flag_map.display().to_string());
+            entry.set_flag_val(default_flag_val.display().to_string());
+            entry.set_flag_info(default_flag_info.display().to_string());
+            let digest = get_files_digest(
+                &[
+                    default_package_map.as_path(),
+                    default_flag_map.as_path(),
+                    default_flag_val.as_path(),
+                    default_flag_info.as_path(),
+                ][..],
+            )
+            .unwrap();
+            entry.set_digest(digest);
+            assert!(pb.records.iter().any(|x| *x == entry));
+        }
+    }
+
+    #[test]
+    fn test_initialize_mainline_storage() {
+        let root_dir = StorageRootDirMock::new();
+        let mut aconfigd = create_mock_aconfigd(&root_dir);
+        aconfigd.initialize_mainline_storage().unwrap();
+        let entries: Vec<_> = std::fs::read_dir(&root_dir.flags_dir).into_iter().collect();
+        assert!(entries.len() > 0);
     }
 }
