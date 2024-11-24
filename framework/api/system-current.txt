@@ -27,6 +27,7 @@ package android.provider {
     method @RequiresPermission(anyOf={android.Manifest.permission.WRITE_DEVICE_CONFIG, android.Manifest.permission.WRITE_ALLOWLISTED_DEVICE_CONFIG}) public static boolean deleteProperty(@NonNull String, @NonNull String);
     method @FlaggedApi("android.provider.flags.dump_improvements") @RequiresPermission(android.Manifest.permission.DUMP) public static void dump(@NonNull android.os.ParcelFileDescriptor, @NonNull java.io.PrintWriter, @NonNull String, @Nullable String[]);
     method @NonNull public static java.util.Set<java.lang.String> getAdbWritableFlags();
+    method @FlaggedApi("android.provider.flags.device_config_writable_namespaces_api") @NonNull public static java.util.Set<java.lang.String> getAdbWritableNamespaces();
     method @NonNull public static java.util.Set<android.provider.DeviceConfig.Properties> getAllProperties();
     method public static boolean getBoolean(@NonNull String, @NonNull String, boolean);
     method @RequiresPermission(android.Manifest.permission.READ_DEVICE_CONFIG) public static float getFloat(@NonNull String, @NonNull String, float);
