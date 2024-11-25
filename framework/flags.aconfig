@@ -28,10 +28,9 @@ flag {
 }
 
 flag {
-  name: "new_storage_public_write_api"
-  namespace: "core_experiments_team_internal"
-  description: "API flag for writing new storage"
-  bug: "372729920"
-  is_fixed_read_only: true
+  name: "device_config_writable_namespaces_api"
+  namespace: "psap_ai"
+  description: "API flag for accessing DeviceConfig writable namespaces"
+  bug: "364083026"
   is_exported: true
 }

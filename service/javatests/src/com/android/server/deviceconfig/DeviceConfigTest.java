@@ -15,6 +15,9 @@
  */
 package com.android.server.deviceconfig;
 
+import static org.junit.Assert.assertThrows;
+
+import android.os.ParcelFileDescriptor;
 import android.platform.test.annotations.RequiresFlagsEnabled;
 import android.platform.test.flag.junit.CheckFlagsRule;
 import android.platform.test.flag.junit.DeviceFlagsValueProvider;
@@ -41,10 +44,30 @@ public final class DeviceConfigTest {
     private static final String NAMESPACE_B = "B Space has no name";
 
     private static final String DUMP_PREFIX = "..";
+    private static final String[] DUMP_NO_ARGS = null;
 
     @Rule public final Expect expect = Expect.create();
     @Rule public final CheckFlagsRule checkFlagsRule =
             DeviceFlagsValueProvider.createCheckFlagsRule();
+
+    @Test
+    @RequiresFlagsEnabled(Flags.FLAG_DUMP_IMPROVEMENTS)
+    public void testDump_nullFd() throws Exception {
+        try (StringWriter sw = new StringWriter()) {
+            PrintWriter pw = new PrintWriter(sw);
+            assertThrows(NullPointerException.class, () ->
+                    DeviceConfig.dump(/* fd= */ null, pw, DUMP_PREFIX, DUMP_NO_ARGS));
+        }
+    }
+
+    @Test
+    @RequiresFlagsEnabled(Flags.FLAG_DUMP_IMPROVEMENTS)
+    public void testDump_nullPrintWriter() throws Exception {
+        try (ParcelFileDescriptor fd = ParcelFileDescriptor.createPipe()[0]) {
+            assertThrows(NullPointerException.class, () ->
+                    DeviceConfig.dump(fd, /* printWriter= */ null, DUMP_PREFIX, DUMP_NO_ARGS));
+        }
+    }
 
     @Test
     @RequiresFlagsEnabled(Flags.FLAG_DUMP_IMPROVEMENTS)
@@ -87,10 +110,11 @@ public final class DeviceConfigTest {
     }
 
     private String dump(String...args) throws IOException {
-        try (StringWriter sw = new StringWriter()) {
+        try (StringWriter sw = new StringWriter();
+                ParcelFileDescriptor fd = ParcelFileDescriptor.createPipe()[0]) {
             PrintWriter pw = new PrintWriter(sw);
 
-            DeviceConfig.dump(/* fd= */ null, pw, DUMP_PREFIX, args);
+            DeviceConfig.dump(fd, pw, DUMP_PREFIX, args);
 
             pw.flush();
             String dump = sw.toString();
