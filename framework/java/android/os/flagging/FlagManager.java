@@ -79,14 +79,14 @@ public final class FlagManager {
      * buildFingerprint}-associated overrides will take precedence over the reboot-associated
      * overrides.
      *
-     * @param flags map from flag qualified name to new value.
      * @param buildFingerprint a system build fingerprint identifier.
+     * @param flags map from flag qualified name to new value.
      * @throws AconfigWriteException if the write fails.
      * @see android.os.Build.FINGERPRINT
      */
     @FlaggedApi(Flags.FLAG_STAGE_FLAGS_FOR_BUILD)
     public void setBooleanOverridesOnSystemBuildFingerprint(
-            @NonNull Map<String, Boolean> flags, @NonNull String buildFingerprint) {
+            @NonNull String buildFingerprint, @NonNull Map<String, Boolean> flags) {
         StorageRequestMessages requestMessages =
                 buildOtaFlagStagingMessages(Flag.buildFlags(flags), buildFingerprint);
         sendMessages(requestMessages);
