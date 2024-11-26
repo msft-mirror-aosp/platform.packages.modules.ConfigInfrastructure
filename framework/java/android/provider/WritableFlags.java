@@ -1,5 +1,7 @@
 package android.provider;
 
+import android.ravenwood.annotation.RavenwoodKeepWholeClass;
+
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
@@ -13,6 +15,7 @@ import java.util.List;
  * description of the flag's functionality, and a justification for why it needs to be
  * allowlisted.
  */
+@RavenwoodKeepWholeClass
 final class WritableFlags {
     public static final Set<String> ALLOWLIST =
             new HashSet<String>(Arrays.asList(
