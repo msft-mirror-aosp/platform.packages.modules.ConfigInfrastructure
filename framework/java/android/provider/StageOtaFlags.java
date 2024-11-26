@@ -83,20 +83,6 @@ public final class StageOtaFlags {
   @StageStatus
   public static int stageBooleanAconfigFlagsForBuild(
       @NonNull Map<String, Boolean> flags, @NonNull String buildId) {
-
-    boolean storageMarkerFileExists = false;
-    try {
-      File file = new File(STORAGE_MARKER_FILE_PATH);
-      storageMarkerFileExists = file.exists();
-    } catch (Exception e) {
-      Log.i(LOG_TAG, "Failed to check if file exists: " + e);
-    }
-
-    if (!storageMarkerFileExists) {
-      Log.i(LOG_TAG, "Storage marker file does not exist");
-      return STATUS_STORAGE_NOT_ENABLED;
-    }
-
     int flagCount = flags.size();
     Log.d(LOG_TAG, "stageFlagsForBuild invoked for " + flagCount + " flags");
 
