@@ -14,10 +14,14 @@ thiserror = "1.0.56"
 clap = { version = "4.1.8", features = ["derive"] }
 memmap2 = "0.8.0"
 tempfile = "3.13.0"
+log = "0.4"
+android_logger = "0.13"
+libc = "0.2"
 aconfig_storage_file = {path = "../../../../build/tools/aconfig/aconfig_storage_file"}
 aconfig_storage_read_api = {path = "../../../../build/tools/aconfig/aconfig_storage_read_api"}
 aconfig_storage_write_api = {path = "../../../../build/tools/aconfig/aconfig_storage_write_api"}
 aconfigd_protos = {path = "./proto"}
+openssl = "0.10.68"
 
 [[bin]]
 name = "aconfigd-mainline"

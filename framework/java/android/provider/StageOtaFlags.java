@@ -43,12 +43,14 @@ import java.lang.annotation.Retention;
 @FlaggedApi(Flags.FLAG_STAGE_FLAGS_FOR_BUILD)
 public final class StageOtaFlags {
   private static String LOG_TAG = "StageOtaFlags";
-  private static final String SOCKET_ADDRESS = "aconfigd";
+  private static final String SOCKET_ADDRESS = "aconfigd_system";
   private static final String STORAGE_MARKER_FILE_PATH
         = "/metadata/aconfig/boot/enable_only_new_storage";
 
-  private static final int STATUS_STORAGE_NOT_ENABLED = -1;
-  private static final int STATUS_STAGE_SUCCESS = 0;
+  /** Aconfig storage is disabled and unavailable for writes. @hide */
+  @SystemApi public static final int STATUS_STORAGE_NOT_ENABLED = -1;
+  /** Stage request was successful. @hide */
+  @SystemApi public static final int STATUS_STAGE_SUCCESS = 0;
 
   /** @hide */
   @IntDef(prefix = { "STATUS_" }, value = {
@@ -81,20 +83,6 @@ public final class StageOtaFlags {
   @StageStatus
   public static int stageBooleanAconfigFlagsForBuild(
       @NonNull Map<String, Boolean> flags, @NonNull String buildId) {
-
-    boolean storageMarkerFileExists = false;
-    try {
-      File file = new File(STORAGE_MARKER_FILE_PATH);
-      storageMarkerFileExists = file.exists();
-    } catch (Exception e) {
-      Log.i(LOG_TAG, "Failed to check if file exists: " + e);
-    }
-
-    if (!storageMarkerFileExists) {
-      Log.i(LOG_TAG, "Storage marker file does not exist");
-      return STATUS_STORAGE_NOT_ENABLED;
-    }
-
     int flagCount = flags.size();
     Log.d(LOG_TAG, "stageFlagsForBuild invoked for " + flagCount + " flags");
 
@@ -151,8 +139,21 @@ public final class StageOtaFlags {
         StorageRequestMessage.OTAFlagStagingMessage.newBuilder().setBuildId(buildId);
     for (Map.Entry<String, Boolean> flagAndValue : flags.entrySet()) {
       String qualifiedFlagName = flagAndValue.getKey();
-      String packageName = qualifiedFlagName.substring(0, qualifiedFlagName.lastIndexOf("."));
-      String flagName = qualifiedFlagName.substring(qualifiedFlagName.lastIndexOf(".") + 1);
+
+      // aconfig flags follow a package_name [dot] flag_name convention and will always have
+      // a [dot] character in the flag name.
+      //
+      // If a [dot] character wasn't found it's likely because this was a legacy flag. We make no
+      // assumptions here and still attempt to stage these flags with aconfigd and let it decide
+      // whether to use the flag / discard it.
+      String packageName = "";
+      String flagName = qualifiedFlagName;
+      int idx = qualifiedFlagName.lastIndexOf(".");
+      if (idx != -1) {
+        packageName = qualifiedFlagName.substring(0, qualifiedFlagName.lastIndexOf("."));
+        flagName = qualifiedFlagName.substring(qualifiedFlagName.lastIndexOf(".") + 1);
+      }
+
       String value = flagAndValue.getValue() ? "true" : "false";
       FlagOverride override =
           FlagOverride.newBuilder()

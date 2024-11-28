@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-service aconfigd_mainline_bootstrap_init /apex/com.android.configinfrastructure/bin/aconfigd-mainline bootstrap-init
+service mainline_aconfigd_bootstrap_init /apex/com.android.configinfrastructure/bin/aconfigd-mainline bootstrap-init
     class core
     user system
     group system
@@ -22,7 +22,7 @@ service aconfigd_mainline_bootstrap_init /apex/com.android.configinfrastructure/
     #turn it on when b/312444587 completes
     #reboot_on_failure reboot
 
-service aconfigd_mainline_init /apex/com.android.configinfrastructure/bin/aconfigd-mainline init
+service mainline_aconfigd_init /apex/com.android.configinfrastructure/bin/aconfigd-mainline init
     class core
     user system
     group system
@@ -32,11 +32,11 @@ service aconfigd_mainline_init /apex/com.android.configinfrastructure/bin/aconfi
     #turn it on when b/312444587 completes
     #reboot_on_failure reboot
 
-service aconfigd_service /apex/com.android.configinfrastructure/bin/aconfigd-mainline start-socket
+service mainline_aconfigd_socket_service /apex/com.android.configinfrastructure/bin/aconfigd-mainline start-socket
     class core
     user system
     group system
     oneshot
     disabled # does not start with the core class
     file /dev/kmsg w
-    socket aconfigd stream 666 system system
+    socket aconfigd_mainline stream 666 system system

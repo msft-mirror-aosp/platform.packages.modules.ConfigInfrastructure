@@ -18,8 +18,8 @@
 //! (1) initialize mainline storage files
 //! (2) initialize and maintain a persistent socket based service
 
-use aconfigd_mainline::AconfigdError;
 use clap::Parser;
+use log::{error, info};
 
 mod aconfigd_commands;
 
@@ -41,12 +41,34 @@ enum Command {
     BootstrapInit,
 }
 
-fn main() -> Result<(), AconfigdError> {
-    let cli = Cli::parse();
-    match cli.command {
-        Command::StartSocket => aconfigd_commands::start_socket()?,
-        Command::Init => aconfigd_commands::init()?,
-        Command::BootstrapInit => aconfigd_commands::bootstrap_init()?,
+fn main() {
+    // SAFETY: nobody has taken ownership of the inherited FDs yet.
+    // This needs to be called before logger initialization as logger setup will create a
+    // file descriptor.
+    unsafe {
+        if let Err(errmsg) = rustutils::inherited_fd::init_once() {
+            error!("failed to run init_once for inherited fds: {:?}.", errmsg);
+            std::process::exit(1);
+        }
     };
-    Ok(())
+
+    // setup android logger, direct to logcat
+    android_logger::init_once(
+        android_logger::Config::default()
+            .with_tag("aconfigd_mainline")
+            .with_max_level(log::LevelFilter::Trace),
+    );
+    info!("starting aconfigd_mainline commands.");
+
+    let cli = Cli::parse();
+    let command_return = match cli.command {
+        Command::StartSocket => aconfigd_commands::start_socket(),
+        Command::Init => aconfigd_commands::init(),
+        Command::BootstrapInit => aconfigd_commands::bootstrap_init(),
+    };
+
+    if let Err(errmsg) = command_return {
+        error!("failed to run aconfigd command: {:?}.", errmsg);
+        std::process::exit(1);
+    }
 }

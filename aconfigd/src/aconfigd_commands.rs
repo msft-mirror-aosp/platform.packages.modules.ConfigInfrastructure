@@ -14,19 +14,60 @@
  * limitations under the License.
  */
 
-use aconfigd_mainline::AconfigdError;
+use aconfigd_rust::aconfigd::Aconfigd;
+use anyhow::{bail, Result};
+use log::{debug, error};
+use std::os::fd::AsRawFd;
+use std::os::unix::net::UnixListener;
+use std::path::Path;
+
+const ACONFIGD_SOCKET: &str = "aconfigd_mainline";
+const ACONFIGD_ROOT_DIR: &str = "/metadata/aconfig";
+const STORAGE_RECORDS: &str = "/metadata/aconfig/mainline_storage_records.pb";
+const ACONFIGD_SOCKET_BACKLOG: i32 = 8;
 
 /// start aconfigd socket service
-pub fn start_socket() -> Result<(), AconfigdError> {
+pub fn start_socket() -> Result<()> {
+    let fd = rustutils::sockets::android_get_control_socket(ACONFIGD_SOCKET)?;
+
+    // SAFETY: Safe because this doesn't modify any memory and we check the return value.
+    let ret = unsafe { libc::listen(fd.as_raw_fd(), ACONFIGD_SOCKET_BACKLOG) };
+    if ret < 0 {
+        bail!(std::io::Error::last_os_error());
+    }
+
+    let listener = UnixListener::from(fd);
+
+    let mut aconfigd = Aconfigd::new(Path::new(ACONFIGD_ROOT_DIR), Path::new(STORAGE_RECORDS));
+    aconfigd.initialize_from_storage_record()?;
+
+    debug!("start waiting for a new client connection through socket.");
+    for stream in listener.incoming() {
+        match stream {
+            Ok(mut stream) => {
+                if let Err(errmsg) = aconfigd.handle_socket_request_from_stream(&mut stream) {
+                    error!("failed to handle socket request: {:?}", errmsg);
+                }
+            }
+            Err(errmsg) => {
+                error!("failed to listen for an incoming message: {:?}", errmsg);
+            }
+        }
+    }
+
     Ok(())
 }
 
 /// initialize mainline module storage files
-pub fn init() -> Result<(), AconfigdError> {
+pub fn init() -> Result<()> {
+    let mut aconfigd = Aconfigd::new(Path::new(ACONFIGD_ROOT_DIR), Path::new(STORAGE_RECORDS));
+    aconfigd.remove_boot_files()?;
+    aconfigd.initialize_from_storage_record()?;
+    aconfigd.initialize_mainline_storage()?;
     Ok(())
 }
 
 /// initialize bootstrapped mainline module storage files
-pub fn bootstrap_init() -> Result<(), AconfigdError> {
+pub fn bootstrap_init() -> Result<()> {
     Ok(())
 }
