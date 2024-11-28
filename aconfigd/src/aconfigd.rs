@@ -21,7 +21,8 @@ use aconfigd_protos::{
     ProtoFlagOverrideMessage, ProtoFlagQueryMessage, ProtoFlagQueryReturnMessage,
     ProtoListStorageMessage, ProtoListStorageMessageMsg, ProtoNewStorageMessage,
     ProtoOTAFlagStagingMessage, ProtoPersistStorageRecords, ProtoRemoveLocalOverrideMessage,
-    ProtoStorageRequestMessage, ProtoStorageRequestMessageMsg, ProtoStorageReturnMessage,
+    ProtoStorageRequestMessage, ProtoStorageRequestMessageMsg, ProtoStorageRequestMessages,
+    ProtoStorageReturnMessage, ProtoStorageReturnMessages,
 };
 use log::{debug, error, warn};
 use std::io::{Read, Write};
@@ -395,23 +396,29 @@ impl Aconfigd {
             .read_exact(&mut request_buffer)
             .map_err(|errmsg| AconfigdError::FailToReadFromSocket { errmsg })?;
 
-        let request =
+        let requests: &ProtoStorageRequestMessages =
             &protobuf::Message::parse_from_bytes(&request_buffer[..]).map_err(|errmsg| {
                 AconfigdError::FailToParsePbFromBytes { file: "socket request".to_string(), errmsg }
             })?;
 
-        let return_pb = match self.handle_socket_request(request) {
-            Ok(return_msg) => return_msg,
-            Err(errmsg) => {
-                error!("failed to handle socket request: {}", errmsg);
-                let mut return_msg = ProtoStorageReturnMessage::new();
-                return_msg
-                    .set_error_message(format!("failed to handle socket request: {:?}", errmsg));
-                return_msg
-            }
-        };
+        let mut return_msgs = ProtoStorageReturnMessages::new();
+        for request in requests.msgs.iter() {
+            let return_pb = match self.handle_socket_request(request) {
+                Ok(return_msg) => return_msg,
+                Err(errmsg) => {
+                    error!("failed to handle socket request: {}", errmsg);
+                    let mut return_msg = ProtoStorageReturnMessage::new();
+                    return_msg.set_error_message(format!(
+                        "failed to handle socket request: {:?}",
+                        errmsg
+                    ));
+                    return_msg
+                }
+            };
+            return_msgs.msgs.push(return_pb);
+        }
 
-        let bytes = protobuf::Message::write_to_bytes(&return_pb).map_err(|errmsg| {
+        let bytes = protobuf::Message::write_to_bytes(&return_msgs).map_err(|errmsg| {
             AconfigdError::FailToSerializePb { file: "socket".to_string(), errmsg }
         })?;
 
