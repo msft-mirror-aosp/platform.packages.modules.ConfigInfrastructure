@@ -18,9 +18,19 @@ package android.os.flagging;
 
 import static android.provider.flags.Flags.FLAG_NEW_STORAGE_PUBLIC_API;
 
-import android.aconfig.storage.StorageFileProvider;
+import android.aconfig.storage.FlagTable;
+import android.aconfig.storage.FlagValueList;
+import android.aconfig.storage.PackageTable;
 import android.annotation.FlaggedApi;
 import android.annotation.NonNull;
+import android.os.StrictMode;
+
+import java.io.Closeable;
+import java.io.File;
+import java.nio.MappedByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 
 /**
  * An {@code aconfig} package containing the enabled state of its flags.
@@ -35,16 +45,18 @@ import android.annotation.NonNull;
 @FlaggedApi(FLAG_NEW_STORAGE_PUBLIC_API)
 public class AconfigPackage {
 
-    private static final String[] PLATFORM_CONTAINERS = {"system", "product", "vendor"};
+    private static final String MAP_PATH = "/metadata/aconfig/maps/";
+    private static final String BOOT_PATH = "/metadata/aconfig/boot/";
+    private static final String SYSTEM_MAP = "/metadata/aconfig/maps/system.package.map";
+    private static final String PMAP_FILE_EXT = ".package.map";
 
-    private final PlatformAconfigPackageInternal mPlatformPackage;
-    private final AconfigPackageInternal mAconfigPackage;
+    private FlagTable mFlagTable;
+    private FlagValueList mFlagValueList;
 
-    private AconfigPackage(
-            PlatformAconfigPackageInternal pPackage, AconfigPackageInternal aPackage) {
-        mPlatformPackage = pPackage;
-        mAconfigPackage = aPackage;
-    }
+    private int mPackageBooleanStartOffset = -1;
+    private int mPackageId = -1;
+
+    private AconfigPackage() {}
 
     /**
      * Loads an Aconfig Package from Aconfig Storage.
@@ -61,28 +73,62 @@ public class AconfigPackage {
      */
     @FlaggedApi(FLAG_NEW_STORAGE_PUBLIC_API)
     public static @NonNull AconfigPackage load(@NonNull String packageName) {
-        StorageFileProvider fileProvider = StorageFileProvider.getDefaultProvider();
-        // First try to load from platform containers.
-        for (String container : PLATFORM_CONTAINERS) {
-            PlatformAconfigPackageInternal pPackage =
-                    PlatformAconfigPackageInternal.load(container, packageName);
-            if (pPackage.getException() == null) {
-                return new AconfigPackage(pPackage, null);
-            }
-        }
+        StrictMode.ThreadPolicy oldPolicy = StrictMode.allowThreadDiskReads();
+        try {
+            AconfigPackage aconfigPackage = new AconfigPackage();
+            PackageTable pTable = null;
+            PackageTable.Node pNode = null;
 
-        // If not found in platform containers, search all package map files.
-        for (String container : fileProvider.listContainers(PLATFORM_CONTAINERS)) {
-            AconfigPackageInternal aPackage = AconfigPackageInternal.load(container, packageName);
-            if (aPackage.getException() == null) {
-                return new AconfigPackage(null, aPackage);
+            try {
+                pTable = PackageTable.fromBytes(mapStorageFile(SYSTEM_MAP));
+                pNode = pTable.get(packageName);
+            } catch (Exception e) {
+                // Ignore exceptions when loading the system map file.
             }
-        }
 
-        // Package not found.
-        throw new AconfigStorageReadException(
-                AconfigStorageReadException.ERROR_PACKAGE_NOT_FOUND,
-                "package " + packageName + " cannot be found on the device");
+            if (pNode == null) {
+                File mapDir = new File(MAP_PATH);
+                String[] mapFiles = mapDir.list();
+                if (mapFiles == null) {
+                    throw new AconfigStorageReadException(
+                            AconfigStorageReadException.ERROR_PACKAGE_NOT_FOUND,
+                            "package " + packageName + " cannot be found on the device");
+                }
+
+                for (String file : mapFiles) {
+                    if (!file.endsWith(PMAP_FILE_EXT)) {
+                        continue;
+                    }
+                    pTable = PackageTable.fromBytes(mapStorageFile(MAP_PATH + file));
+                    pNode = pTable.get(packageName);
+                    if (pNode != null) {
+                        break;
+                    }
+                }
+            }
+
+            if (pNode == null) {
+                throw new AconfigStorageReadException(
+                        AconfigStorageReadException.ERROR_PACKAGE_NOT_FOUND,
+                        "package " + packageName + " cannot be found on the device");
+            }
+
+            String container = pTable.getHeader().getContainer();
+            aconfigPackage.mFlagTable =
+                    FlagTable.fromBytes(mapStorageFile(MAP_PATH + container + ".flag.map"));
+            aconfigPackage.mFlagValueList =
+                    FlagValueList.fromBytes(mapStorageFile(BOOT_PATH + container + ".val"));
+            aconfigPackage.mPackageBooleanStartOffset = pNode.getBooleanStartIndex();
+            aconfigPackage.mPackageId = pNode.getPackageId();
+            return aconfigPackage;
+        } catch (AconfigStorageReadException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new AconfigStorageReadException(
+                    AconfigStorageReadException.ERROR_GENERIC, "Fail to create AconfigPackage", e);
+        } finally {
+            StrictMode.setThreadPolicy(oldPolicy);
+        }
     }
 
     /**
@@ -98,9 +144,36 @@ public class AconfigPackage {
      */
     @FlaggedApi(FLAG_NEW_STORAGE_PUBLIC_API)
     public boolean getBooleanFlagValue(@NonNull String flagName, boolean defaultValue) {
-        if (mPlatformPackage != null) {
-            return mPlatformPackage.getBooleanFlagValue(flagName, defaultValue);
+        FlagTable.Node fNode = mFlagTable.get(mPackageId, flagName);
+        if (fNode == null) {
+            return defaultValue;
         }
-        return mAconfigPackage.getBooleanFlagValue(flagName, defaultValue);
+        return mFlagValueList.getBoolean(fNode.getFlagIndex() + mPackageBooleanStartOffset);
+    }
+
+    // Map a storage file given file path
+    private static MappedByteBuffer mapStorageFile(String file) {
+        FileChannel channel = null;
+        try {
+            channel = FileChannel.open(Paths.get(file), StandardOpenOption.READ);
+            return channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size());
+        } catch (Exception e) {
+            throw new AconfigStorageReadException(
+                    AconfigStorageReadException.ERROR_CANNOT_READ_STORAGE_FILE,
+                    "Fail to mmap storage",
+                    e);
+        } finally {
+            quietlyDispose(channel);
+        }
+    }
+
+    private static void quietlyDispose(Closeable closable) {
+        try {
+            if (closable != null) {
+                closable.close();
+            }
+        } catch (Exception e) {
+            // no need to care, at least as of now
+        }
     }
 }
