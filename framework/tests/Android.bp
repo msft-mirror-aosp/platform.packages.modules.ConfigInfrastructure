@@ -22,14 +22,13 @@ android_test {
     static_libs: [
         "aconfig_device_paths_java",
         "androidx.test.rules",
-        "libaconfig_storage_read_api_java",
+        "aconfig_storage_file_java",
         "junit",
     ],
-    jni_libs: [
-        "libaconfig_storage_read_api_rust_jni",
+    libs: [
+        "framework-configinfrastructure.impl"
     ],
-    platform_apis: true,
-    certificate: "platform",
+    sdk_version: "module_current",
     test_suites: [
         "general-tests",
     ],

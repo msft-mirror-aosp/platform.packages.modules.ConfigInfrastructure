@@ -27,9 +27,9 @@ java_sdk_library {
         "android.internal.configinfra",
         "android.provider",
         "android.provider.flags",
+        "android.provider.x",
         "android.provider.aidl",
-
-        "android.configinfrastructure.aconfig",
+        "android.os.flagging",
     ],
     apex_available: [
         "com.android.configinfrastructure",
@@ -39,6 +39,10 @@ java_sdk_library {
     impl_library_visibility: [
         "//packages/modules/ConfigInfrastructure:__subpackages__",
         "//frameworks/base/ravenwood",
+    ],
+    libs: [
+        "unsupportedappusage",
+        "aconfig_storage_stub",
     ],
     static_libs: [
         "aconfigd_java_proto_lite_lib",
