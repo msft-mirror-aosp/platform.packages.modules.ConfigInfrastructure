@@ -29,66 +29,120 @@ mod test_utils;
 #[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum AconfigdError {
-    #[error("invalid command")]
-    InvalidCommand(#[source] anyhow::Error),
+    #[error("failed to update file permission of {} to {}: {:?}", .file, .mode, .errmsg)]
+    FailToUpdateFilePerm { file: String, mode: u32, errmsg: std::io::Error },
 
-    #[error("fail to parse storage file")]
-    FailToParse(#[source] anyhow::Error),
+    #[error("failed to copy file from {} to {}: {:?}", .src, .dst, .errmsg)]
+    FailToCopyFile { src: String, dst: String, errmsg: std::io::Error },
 
-    #[error("fail to map storage file")]
-    FailToMap(#[source] anyhow::Error),
+    #[error("fail to remove file {}: {:?}", .file, .errmsg)]
+    FailToRemoveFile { file: String, errmsg: std::io::Error },
 
-    #[error("invalid flag value type")]
-    InvalidFlagValueType(#[source] anyhow::Error),
+    #[error("fail to open file {}: {:?}", .file, .errmsg)]
+    FailToOpenFile { file: String, errmsg: std::io::Error },
 
-    #[error("failed to modify file permission")]
-    FailToUpdateFilePerm(#[source] anyhow::Error),
+    #[error("fail to read file {}: {:?}", .file, .errmsg)]
+    FailToReadFile { file: String, errmsg: std::io::Error },
 
-    #[error("failed to copy file")]
-    FailToCopyFile(#[source] anyhow::Error),
+    #[error("fail to write file {}: {:?}", .file, .errmsg)]
+    FailToWriteFile { file: String, errmsg: std::io::Error },
 
-    #[error("fail to remove file")]
-    FailToRemoveFile(#[source] anyhow::Error),
+    #[error("fail to parse to protobuf from bytes for {}: {:?}", .file, .errmsg)]
+    FailToParsePbFromBytes { file: String, errmsg: protobuf::Error },
 
-    #[error("fail to get file metadata")]
-    FailToGetFileMetadata(#[source] anyhow::Error),
+    #[error("fail to serialize protobuf to bytes for file {}: {:?}", .file, .errmsg)]
+    FailToSerializePb { file: String, errmsg: protobuf::Error },
 
-    #[error("fail to read dir")]
-    FailToReadDir(#[source] anyhow::Error),
+    #[error("fail to get hasher for digest: {:?}", .errmsg)]
+    FailToGetHasherForDigest { errmsg: openssl::error::ErrorStack },
 
-    #[error("flag does not exist")]
-    FlagDoesNotExist(#[source] anyhow::Error),
+    #[error("failed to hash file {}: {:?}", .file, .errmsg)]
+    FailToHashFile { file: String, errmsg: openssl::error::ErrorStack },
 
-    #[error("cannot find container")]
-    FailToFindContainer(#[source] anyhow::Error),
+    #[error("failed to get files digest: {:?}", .errmsg)]
+    FailToGetDigest { errmsg: openssl::error::ErrorStack },
 
-    #[error("fail to override flag")]
-    FailToOverride(#[source] anyhow::Error),
+    #[error("fail to get storage file version of {}: {:?}", .file, .errmsg)]
+    FailToGetFileVersion { file: String, errmsg: aconfig_storage_file::AconfigStorageError },
 
-    #[error("fail to add continer")]
-    FailToAddContainer(#[source] anyhow::Error),
+    #[error("fail to map storage file {}: {:?}", .file, .errmsg)]
+    FailToMapFile { file: String, errmsg: aconfig_storage_file::AconfigStorageError },
 
-    #[error("fail to update continer")]
-    FailToUpdateContainer(#[source] anyhow::Error),
+    #[error("mapped storage file {} is none", .file)]
+    MappedFileIsNone { file: String },
 
-    #[error("fail to create boot storage files")]
-    FailToCreateBootFiles(#[source] anyhow::Error),
+    #[error("invalid flag value type for {}: {:?}", .flag, .errmsg)]
+    InvalidFlagValueType { flag: String, errmsg: aconfig_storage_file::AconfigStorageError },
 
-    #[error("invalid socket request")]
-    InvalidSocketRequest(#[source] anyhow::Error),
+    #[error("flag {} does not exist", .flag)]
+    FlagDoesNotExist { flag: String },
 
-    #[error("fail to bind socket")]
-    FailToBindSocket(#[source] anyhow::Error),
+    #[error("fail to get package context for {}: {:?}", .package, .errmsg)]
+    FailToGetPackageContext { package: String, errmsg: aconfig_storage_file::AconfigStorageError },
 
-    #[error("fail to read from socket")]
-    FailToReadFromSocket(#[source] anyhow::Error),
+    #[error("fail to get flag context for {}: {:?}", .flag, .errmsg)]
+    FailToGetFlagContext { flag: String, errmsg: aconfig_storage_file::AconfigStorageError },
 
-    #[error("fail to seralize protobuf to bytes")]
-    FailToSerializePb(#[source] anyhow::Error),
+    #[error("fail to get flag attribute for {}: {:?}", .flag, .errmsg)]
+    FailToGetFlagAttribute { flag: String, errmsg: aconfig_storage_file::AconfigStorageError },
 
-    #[error("fail to write to socket")]
-    FailToWriteToSocket(#[source] anyhow::Error),
+    #[error("fail to get flag value for {}: {:?}", .flag, .errmsg)]
+    FailToGetFlagValue { flag: String, errmsg: aconfig_storage_file::AconfigStorageError },
 
-    #[error("failed to get files digest")]
-    FailToGetFilesDigest(#[source] anyhow::Error),
+    #[error("flag {} has no local override", .flag)]
+    FlagHasNoLocalOverride { flag: String },
+
+    #[error("invalid flag value {} for flag {}", .value, .flag)]
+    InvalidFlagValue { flag: String, value: String },
+
+    #[error("failed to set flag value for flag {}: {:?}", .flag, .errmsg)]
+    FailToSetFlagValue { flag: String, errmsg: aconfig_storage_file::AconfigStorageError },
+
+    #[error("failed to set flag has server override for flag {}: {:?}", .flag, .errmsg)]
+    FailToSetFlagHasServerOverride {
+        flag: String,
+        errmsg: aconfig_storage_file::AconfigStorageError,
+    },
+
+    #[error("failed to set flag has local override for flag {}: {:?}", .flag, .errmsg)]
+    FailToSetFlagHasLocalOverride {
+        flag: String,
+        errmsg: aconfig_storage_file::AconfigStorageError,
+    },
+
+    #[error("flag {} is readonly", .flag)]
+    FlagIsReadOnly { flag: String },
+
+    #[error("fail to list flags for cotnainer {}: {:?}", .container, .errmsg)]
+    FailToListFlags { container: String, errmsg: aconfig_storage_file::AconfigStorageError },
+
+    #[error("fail to list flags with info for container {}: {:?}", .container, .errmsg)]
+    FailToListFlagsWithInfo { container: String, errmsg: aconfig_storage_file::AconfigStorageError },
+
+    #[error("fail to get storage files for {}", .container)]
+    FailToGetStorageFiles { container: String },
+
+    #[error("unexpected internal error")]
+    InternalError(#[source] anyhow::Error),
+
+    #[error("fail to get metadata of file {}: {:?}", .file, .errmsg)]
+    FailToGetFileMetadata { file: String, errmsg: std::io::Error },
+
+    #[error("fail to read /apex dir: {:?}", .errmsg)]
+    FailToReadApexDir { errmsg: std::io::Error },
+
+    #[error("cannot find container for package {}", .package)]
+    FailToFindContainer { package: String },
+
+    #[error("invalid socket request: {}", .errmsg)]
+    InvalidSocketRequest { errmsg: String },
+
+    #[error("fail to read from socket unix stream: {:?}", .errmsg)]
+    FailToReadFromSocket { errmsg: std::io::Error },
+
+    #[error("fail to write to socket unix stream: {:?}", .errmsg)]
+    FailToWriteToSocket { errmsg: std::io::Error },
+
+    #[error("fail to read device build fingerpirnt: {:?}", .errmsg)]
+    FailToReadBuildFingerPrint { errmsg: rustutils::system_properties::PropertyWatcherError },
 }
