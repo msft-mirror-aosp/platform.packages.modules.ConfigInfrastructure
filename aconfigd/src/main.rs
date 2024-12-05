@@ -42,6 +42,13 @@ enum Command {
 }
 
 fn main() {
+    if !aconfig_new_storage_flags::enable_aconfig_storage_daemon()
+        || !aconfig_new_storage_flags::enable_aconfigd_from_mainline()
+    {
+        info!("aconfigd_mainline is disabled, exiting");
+        std::process::exit(0);
+    }
+
     // SAFETY: nobody has taken ownership of the inherited FDs yet.
     // This needs to be called before logger initialization as logger setup will create a
     // file descriptor.
