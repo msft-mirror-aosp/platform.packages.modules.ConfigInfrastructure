@@ -14,117 +14,60 @@
  * limitations under the License.
  */
 
-use aconfigd_mainline::aconfigd::Aconfigd;
-use aconfigd_mainline::AconfigdError;
-use aconfigd_protos::ProtoStorageReturnMessage;
-use anyhow::anyhow;
-use log::{error, info};
-use std::io::{Read, Write};
+use aconfigd_rust::aconfigd::Aconfigd;
+use anyhow::{bail, Result};
+use log::{debug, error};
 use std::os::fd::AsRawFd;
-use std::os::unix::net::{UnixListener, UnixStream};
+use std::os::unix::net::UnixListener;
 use std::path::Path;
 
 const ACONFIGD_SOCKET: &str = "aconfigd_mainline";
 const ACONFIGD_ROOT_DIR: &str = "/metadata/aconfig";
-const STORAGE_RECORDS: &str = "/metadata/aconfig/storage_records.pb";
-
-/// Handle socket request from a unix stream
-pub fn handle_socket_request_from_stream(
-    aconfigd: &mut Aconfigd,
-    stream: &mut UnixStream,
-) -> Result<(), AconfigdError> {
-    let mut request = Vec::new();
-    stream.read_to_end(&mut request).map_err(|errmsg| {
-        AconfigdError::FailToReadFromSocket(anyhow!(
-            "Fail to read from socket unix stream: {:?}",
-            errmsg
-        ))
-    })?;
-
-    let request = &protobuf::Message::parse_from_bytes(&request[..]).map_err(|errmsg| {
-        AconfigdError::FailToParse(anyhow!("Failed to parse into protobuf to buffer: {:?}", errmsg))
-    })?;
-
-    let return_pb = match aconfigd.handle_socket_request(request) {
-        Ok(return_msg) => return_msg,
-        Err(errmsg) => {
-            error!("failed to handle socket request: {}", errmsg);
-            let mut return_msg = ProtoStorageReturnMessage::new();
-            return_msg.set_error_message(format!("failed to handle socket request: {:?}", errmsg));
-            return_msg
-        }
-    };
-
-    let bytes = protobuf::Message::write_to_bytes(&return_pb).map_err(|errmsg| {
-        AconfigdError::FailToSerializePb(anyhow!(
-            "Fail to serialize protobuf to bytes: {:?}",
-            errmsg
-        ))
-    })?;
-
-    stream.write_all(&bytes).map_err(|errmsg| {
-        AconfigdError::FailToWriteToSocket(anyhow!("Fail to write to a socket: {:?}", errmsg))
-    })?;
-
-    Ok(())
-}
+const STORAGE_RECORDS: &str = "/metadata/aconfig/mainline_storage_records.pb";
+const ACONFIGD_SOCKET_BACKLOG: i32 = 8;
 
 /// start aconfigd socket service
-pub fn start_socket() -> Result<(), AconfigdError> {
-    // SAFETY: nobody has taken ownership of the inherited FDs yet.
-    unsafe {
-        rustutils::inherited_fd::init_once().map_err(|errmsg| {
-            AconfigdError::FailToBindSocket(anyhow!(
-                "fail to init once to set CLOEXEC flag: {}",
-                errmsg
-            ))
-        })
-    };
-
-    let fd = rustutils::sockets::android_get_control_socket(ACONFIGD_SOCKET).map_err(|errmsg| {
-        AconfigdError::FailToBindSocket(anyhow!(
-            "fail to get control socket {}'s owned file descriptor: {:?}",
-            ACONFIGD_SOCKET,
-            errmsg
-        ))
-    })?;
+pub fn start_socket() -> Result<()> {
+    let fd = rustutils::sockets::android_get_control_socket(ACONFIGD_SOCKET)?;
 
     // SAFETY: Safe because this doesn't modify any memory and we check the return value.
-    let ret = unsafe { libc::listen(fd.as_raw_fd(), 8) };
+    let ret = unsafe { libc::listen(fd.as_raw_fd(), ACONFIGD_SOCKET_BACKLOG) };
     if ret < 0 {
-        let listen_err = std::io::Error::last_os_error();
-        return Err(AconfigdError::FailToBindSocket(anyhow!(
-            "fail to listen to socket: {:?}",
-            listen_err
-        )));
+        bail!(std::io::Error::last_os_error());
     }
 
     let listener = UnixListener::from(fd);
 
     let mut aconfigd = Aconfigd::new(Path::new(ACONFIGD_ROOT_DIR), Path::new(STORAGE_RECORDS));
+    aconfigd.initialize_from_storage_record()?;
 
-    loop {
-        info!("wait for a new client connection through socket.");
-        match listener.accept() {
-            Ok((mut stream, _)) => {
-                if let Err(errmsg) = handle_socket_request_from_stream(&mut aconfigd, &mut stream) {
+    debug!("start waiting for a new client connection through socket.");
+    for stream in listener.incoming() {
+        match stream {
+            Ok(mut stream) => {
+                if let Err(errmsg) = aconfigd.handle_socket_request_from_stream(&mut stream) {
                     error!("failed to handle socket request: {:?}", errmsg);
                 }
             }
             Err(errmsg) => {
-                error!("accept function failed: {:?}", errmsg);
+                error!("failed to listen for an incoming message: {:?}", errmsg);
             }
         }
     }
+
+    Ok(())
 }
 
 /// initialize mainline module storage files
-pub fn init() -> Result<(), AconfigdError> {
+pub fn init() -> Result<()> {
     let mut aconfigd = Aconfigd::new(Path::new(ACONFIGD_ROOT_DIR), Path::new(STORAGE_RECORDS));
-    aconfigd.initialize_mainline_storage()
+    aconfigd.remove_boot_files()?;
+    aconfigd.initialize_from_storage_record()?;
+    aconfigd.initialize_mainline_storage()?;
+    Ok(())
 }
 
 /// initialize bootstrapped mainline module storage files
-pub fn bootstrap_init() -> Result<(), AconfigdError> {
+pub fn bootstrap_init() -> Result<()> {
     Ok(())
 }
