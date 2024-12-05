@@ -52,6 +52,7 @@ rust_binary {
         "libaconfigd_rust",
         "libandroid_logger",
         "liblibc",
+        "libaconfig_new_storage_flags_rust",
     ],
 }
 
