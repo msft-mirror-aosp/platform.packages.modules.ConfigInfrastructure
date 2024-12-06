@@ -16,6 +16,7 @@
 
 package android.provider;
 
+import android.ravenwood.annotation.RavenwoodKeepWholeClass;
 import android.util.ArraySet;
 
 import java.util.Arrays;
@@ -31,9 +32,11 @@ import java.util.Set;
  * allowlisted.
  * @hide
  */
+@RavenwoodKeepWholeClass
 final class WritableNamespaces {
     public static final Set<String> ALLOWLIST =
             new ArraySet<String>(Arrays.asList(
+                    "adservices",
                     "captive_portal_login",
                     "connectivity",
                     "exo",
