@@ -1,4 +1,22 @@
 // Signature format: 2.0
+package android.os.flagging {
+
+  @FlaggedApi("android.provider.flags.stage_flags_for_build") public class AconfigWriteException extends android.util.AndroidRuntimeException {
+    ctor @FlaggedApi("android.provider.flags.stage_flags_for_build") public AconfigWriteException(@NonNull String);
+    ctor @FlaggedApi("android.provider.flags.stage_flags_for_build") public AconfigWriteException(@NonNull String, @NonNull Throwable);
+  }
+
+  @FlaggedApi("android.provider.flags.stage_flags_for_build") public final class FlagManager {
+    method @FlaggedApi("android.provider.flags.stage_flags_for_build") public void clearBooleanLocalOverridesImmediately(@Nullable java.util.Set<java.lang.String>);
+    method @FlaggedApi("android.provider.flags.stage_flags_for_build") public void clearBooleanLocalOverridesOnReboot(@Nullable java.util.Set<java.lang.String>);
+    method @FlaggedApi("android.provider.flags.stage_flags_for_build") public void setBooleanLocalOverridesImmediately(@NonNull java.util.Map<java.lang.String,java.lang.Boolean>);
+    method @FlaggedApi("android.provider.flags.stage_flags_for_build") public void setBooleanLocalOverridesOnReboot(@NonNull java.util.Map<java.lang.String,java.lang.Boolean>);
+    method @FlaggedApi("android.provider.flags.stage_flags_for_build") public void setBooleanOverridesOnReboot(@NonNull java.util.Map<java.lang.String,java.lang.Boolean>);
+    method @FlaggedApi("android.provider.flags.stage_flags_for_build") public void setBooleanOverridesOnSystemBuildFingerprint(@NonNull String, @NonNull java.util.Map<java.lang.String,java.lang.Boolean>);
+  }
+
+}
+
 package android.provider {
 
   public final class DeviceConfig {
@@ -7,7 +25,9 @@ package android.provider {
     method @RequiresPermission(android.Manifest.permission.WRITE_DEVICE_CONFIG) public static void clearLocalOverride(@NonNull String, @NonNull String);
     method @RequiresPermission(android.Manifest.permission.MONITOR_DEVICE_CONFIG_ACCESS) public static void clearMonitorCallback(@NonNull android.content.ContentResolver);
     method @RequiresPermission(anyOf={android.Manifest.permission.WRITE_DEVICE_CONFIG, android.Manifest.permission.WRITE_ALLOWLISTED_DEVICE_CONFIG}) public static boolean deleteProperty(@NonNull String, @NonNull String);
+    method @FlaggedApi("android.provider.flags.dump_improvements") @RequiresPermission(android.Manifest.permission.DUMP) public static void dump(@NonNull android.os.ParcelFileDescriptor, @NonNull java.io.PrintWriter, @NonNull String, @Nullable String[]);
     method @NonNull public static java.util.Set<java.lang.String> getAdbWritableFlags();
+    method @FlaggedApi("android.provider.flags.device_config_writable_namespaces_api") @NonNull public static java.util.Set<java.lang.String> getAdbWritableNamespaces();
     method @NonNull public static java.util.Set<android.provider.DeviceConfig.Properties> getAllProperties();
     method public static boolean getBoolean(@NonNull String, @NonNull String, boolean);
     method @RequiresPermission(android.Manifest.permission.READ_DEVICE_CONFIG) public static float getFloat(@NonNull String, @NonNull String, float);
@@ -26,6 +46,7 @@ package android.provider {
     method @RequiresPermission(anyOf={android.Manifest.permission.WRITE_DEVICE_CONFIG, android.Manifest.permission.WRITE_ALLOWLISTED_DEVICE_CONFIG}) public static boolean setProperties(@NonNull android.provider.DeviceConfig.Properties) throws android.provider.DeviceConfig.BadConfigException;
     method @RequiresPermission(anyOf={android.Manifest.permission.WRITE_DEVICE_CONFIG, android.Manifest.permission.WRITE_ALLOWLISTED_DEVICE_CONFIG}) public static boolean setProperty(@NonNull String, @NonNull String, @Nullable String, boolean);
     method @RequiresPermission(anyOf={android.Manifest.permission.WRITE_DEVICE_CONFIG, android.Manifest.permission.READ_WRITE_SYNC_DISABLED_MODE_CONFIG}) public static void setSyncDisabledMode(int);
+    field @FlaggedApi("android.provider.flags.dump_improvements") public static final String DUMP_ARG_NAMESPACE = "--namespace";
     field public static final String NAMESPACE_ACCESSIBILITY = "accessibility";
     field public static final String NAMESPACE_ACTIVITY_MANAGER = "activity_manager";
     field public static final String NAMESPACE_ACTIVITY_MANAGER_NATIVE_BOOT = "activity_manager_native_boot";
@@ -142,7 +163,9 @@ package android.provider {
   }
 
   @FlaggedApi("android.provider.flags.stage_flags_for_build") public final class StageOtaFlags {
-    method @FlaggedApi("android.provider.flags.stage_flags_for_build") public static void stageBooleanAconfigFlagsForBuild(@NonNull java.util.Map<java.lang.String,java.lang.Boolean>, @NonNull String);
+    method @FlaggedApi("android.provider.flags.stage_flags_for_build") public static int stageBooleanAconfigFlagsForBuild(@NonNull java.util.Map<java.lang.String,java.lang.Boolean>, @NonNull String);
+    field public static final int STATUS_STAGE_SUCCESS = 0; // 0x0
+    field public static final int STATUS_STORAGE_NOT_ENABLED = -1; // 0xffffffff
   }
 
   public final class UpdatableDeviceConfigServiceReadiness {
