@@ -14,23 +14,25 @@
  * limitations under the License.
  */
 
-package android.configinfrastructure.aconfig.test;
+package android.os.flagging.test;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThrows;
 
 import android.aconfig.DeviceProtos;
 import android.aconfig.nano.Aconfig.parsed_flag;
-import android.aconfig.storage.AconfigStorageReadAPI;
-import android.aconfig.storage.FlagReadContext;
-import android.aconfig.storage.PackageReadContext;
-import android.configinfrastructure.aconfig.AconfigPackage;
+import android.aconfig.storage.FlagTable;
+import android.aconfig.storage.FlagValueList;
+import android.aconfig.storage.PackageTable;
+import android.aconfig.storage.StorageFileProvider;
+import android.os.flagging.AconfigPackage;
+import android.os.flagging.AconfigStorageReadException;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
 import java.io.IOException;
-import java.nio.MappedByteBuffer;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,8 +43,7 @@ public class AconfigPackageTests {
     public void testExternalAconfigPackageInstance() throws IOException {
         List<parsed_flag> flags = DeviceProtos.loadAndParseFlagProtos();
         Map<String, AconfigPackage> readerMap = new HashMap<>();
-        String mapPath = "/metadata/aconfig/maps/";
-        String flagsPath = "/metadata/aconfig/boot/";
+        StorageFileProvider fp = StorageFileProvider.getDefaultProvider();
 
         for (parsed_flag flag : flags) {
 
@@ -50,24 +51,13 @@ public class AconfigPackageTests {
             String packageName = flag.package_;
             String flagName = flag.name;
 
-            MappedByteBuffer packageMap =
-                    AconfigStorageReadAPI.mapStorageFile(mapPath + container + ".package.map");
-            MappedByteBuffer flagMap =
-                    AconfigStorageReadAPI.mapStorageFile(mapPath + container + ".flag.map");
-            MappedByteBuffer flagValList =
-                    AconfigStorageReadAPI.mapStorageFile(flagsPath + container + ".val");
+            PackageTable pTable = fp.getPackageTable(container);
+            PackageTable.Node pNode = pTable.get(packageName);
+            FlagTable fTable = fp.getFlagTable(container);
+            FlagTable.Node fNode = fTable.get(pNode.getPackageId(), flagName);
+            FlagValueList fList = fp.getFlagValueList(container);
 
-            PackageReadContext packageContext =
-                    AconfigStorageReadAPI.getPackageReadContext(packageMap, packageName);
-
-            FlagReadContext flagContext =
-                    AconfigStorageReadAPI.getFlagReadContext(
-                            flagMap, packageContext.mPackageId, flagName);
-
-            boolean rVal =
-                    AconfigStorageReadAPI.getBooleanFlagValue(
-                            flagValList,
-                            packageContext.mBooleanStartIndex + flagContext.mFlagIndex);
+            boolean rVal = fList.getBoolean(pNode.getBooleanStartIndex() + fNode.getFlagIndex());
 
             AconfigPackage reader = readerMap.get(packageName);
             if (reader == null) {
@@ -78,5 +68,15 @@ public class AconfigPackageTests {
 
             assertEquals(rVal, jVal);
         }
+    }
+
+    @Test
+    public void testAconfigPackage_load_withError() {
+        // load fake package
+        AconfigStorageReadException e =
+                assertThrows(
+                        AconfigStorageReadException.class,
+                        () -> AconfigPackage.load("fake_package"));
+        assertEquals(AconfigStorageReadException.ERROR_PACKAGE_NOT_FOUND, e.getErrorCode());
     }
 }

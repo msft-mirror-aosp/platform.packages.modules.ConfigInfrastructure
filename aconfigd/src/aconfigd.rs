@@ -21,10 +21,12 @@ use aconfigd_protos::{
     ProtoFlagOverrideMessage, ProtoFlagQueryMessage, ProtoFlagQueryReturnMessage,
     ProtoListStorageMessage, ProtoListStorageMessageMsg, ProtoNewStorageMessage,
     ProtoOTAFlagStagingMessage, ProtoPersistStorageRecords, ProtoRemoveLocalOverrideMessage,
-    ProtoStorageRequestMessage, ProtoStorageRequestMessageMsg, ProtoStorageReturnMessage,
+    ProtoStorageRequestMessage, ProtoStorageRequestMessageMsg, ProtoStorageRequestMessages,
+    ProtoStorageReturnMessage, ProtoStorageReturnMessages,
 };
-use anyhow::anyhow;
-use log::{log, Level};
+use log::{debug, error, warn};
+use std::io::{Read, Write};
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 
 // Aconfigd that is capable of doing both one shot storage file init and socket service
@@ -45,9 +47,8 @@ impl Aconfigd {
         }
     }
 
-    /// Initialize mainline storage files, create or update existing persist storage files and
-    /// create new boot storage files for each mainline container
-    pub fn initialize_mainline_storage(&mut self) -> Result<(), AconfigdError> {
+    /// Remove old boot storage record
+    pub fn remove_boot_files(&mut self) -> Result<(), AconfigdError> {
         let boot_dir = self.root_dir.join("boot");
         let pb = read_pb_from_file::<ProtoPersistStorageRecords>(&self.persist_storage_records)?;
         for entry in pb.records.iter() {
@@ -59,15 +60,81 @@ impl Aconfigd {
             if boot_info_file.exists() {
                 remove_file(&boot_info_file)?;
             }
-            self.storage_manager.add_storage_files_from_pb(entry)?;
+        }
+        Ok(())
+    }
+
+    /// Initialize aconfigd from persist storage records
+    pub fn initialize_from_storage_record(&mut self) -> Result<(), AconfigdError> {
+        let boot_dir = self.root_dir.join("boot");
+        let pb = read_pb_from_file::<ProtoPersistStorageRecords>(&self.persist_storage_records)?;
+        for entry in pb.records.iter() {
+            self.storage_manager.add_storage_files_from_pb(entry);
+        }
+        Ok(())
+    }
+
+    /// Initialize platform storage files, create or update existing persist storage files and
+    /// create new boot storage files for each platform partitions
+    pub fn initialize_platform_storage(&mut self) -> Result<(), AconfigdError> {
+        for container in ["system", "product", "vendor"] {
+            let aconfig_dir = PathBuf::from("/".to_string() + container + "/etc/aconfig");
+            let default_package_map = aconfig_dir.join("package.map");
+            let default_flag_map = aconfig_dir.join("flag.map");
+            let default_flag_val = aconfig_dir.join("flag.val");
+            let default_flag_info = aconfig_dir.join("flag.info");
+
+            if !default_package_map.exists()
+                || !default_flag_map.exists()
+                || !default_flag_val.exists()
+                || !default_flag_info.exists()
+            {
+                debug!("skip {} initialization due to missing storage files", container);
+                continue;
+            }
+
+            if std::fs::metadata(&default_flag_val)
+                .map_err(|errmsg| AconfigdError::FailToGetFileMetadata {
+                    file: default_flag_val.display().to_string(),
+                    errmsg,
+                })?
+                .len()
+                == 0
+            {
+                debug!("skip {} initialization due to zero sized storage files", container);
+                continue;
+            }
+
+            self.storage_manager.add_or_update_container_storage_files(
+                container,
+                &default_package_map,
+                &default_flag_map,
+                &default_flag_val,
+                &default_flag_info,
+            )?;
+
+            self.storage_manager
+                .write_persist_storage_records_to_file(&self.persist_storage_records)?;
         }
 
+        self.storage_manager.apply_staged_ota_flags()?;
+
+        for container in ["system", "product", "vendor"] {
+            self.storage_manager.apply_all_staged_overrides(container)?;
+        }
+
+        Ok(())
+    }
+
+    /// Initialize mainline storage files, create or update existing persist storage files and
+    /// create new boot storage files for each mainline container
+    pub fn initialize_mainline_storage(&mut self) -> Result<(), AconfigdError> {
         // get all the apex dirs to visit
         let mut dirs_to_visit = Vec::new();
         let apex_dir = PathBuf::from("/apex");
-        for entry in std::fs::read_dir(&apex_dir).map_err(|errmsg| {
-            AconfigdError::FailToReadDir(anyhow!("Fail to read /apex dir: {}", errmsg))
-        })? {
+        for entry in std::fs::read_dir(&apex_dir)
+            .map_err(|errmsg| AconfigdError::FailToReadApexDir { errmsg })?
+        {
             match entry {
                 Ok(entry) => {
                     let path = entry.path();
@@ -90,7 +157,7 @@ impl Aconfigd {
                     }
                 }
                 Err(errmsg) => {
-                    log!(Level::Warn, "failed to visit entry: {}", errmsg);
+                    warn!("failed to visit entry: {}", errmsg);
                 }
             }
         }
@@ -112,12 +179,9 @@ impl Aconfigd {
             }
 
             if std::fs::metadata(&default_flag_val)
-                .map_err(|errmsg| {
-                    AconfigdError::FailToGetFileMetadata(anyhow!(
-                        "Fail to get file {} metadata: {}",
-                        default_flag_val.display(),
-                        errmsg
-                    ))
+                .map_err(|errmsg| AconfigdError::FailToGetFileMetadata {
+                    file: default_flag_val.display().to_string(),
+                    errmsg,
                 })?
                 .len()
                 == 0
@@ -136,7 +200,7 @@ impl Aconfigd {
             self.storage_manager
                 .write_persist_storage_records_to_file(&self.persist_storage_records)?;
 
-            self.storage_manager.create_storage_boot_copy(container)?;
+            self.storage_manager.apply_all_staged_overrides(container)?;
         }
 
         Ok(())
@@ -185,7 +249,7 @@ impl Aconfigd {
 
         self.storage_manager
             .write_persist_storage_records_to_file(&self.persist_storage_records)?;
-        self.storage_manager.create_storage_boot_copy(request_pb.container())?;
+        self.storage_manager.apply_all_staged_overrides(request_pb.container())?;
 
         let mut return_pb = ProtoStorageReturnMessage::new();
         return_pb.mut_new_storage_message();
@@ -216,11 +280,9 @@ impl Aconfigd {
                 result.set_has_local_override(snapshot.has_local_override);
                 Ok(return_pb)
             }
-            None => Err(AconfigdError::FlagDoesNotExist(anyhow!(
-                "Flag {}.{} does not exist",
-                request_pb.package_name(),
-                request_pb.flag_name(),
-            ))),
+            None => Err(AconfigdError::FlagDoesNotExist {
+                flag: request_pb.package_name().to_string() + "." + request_pb.flag_name(),
+            }),
         }
     }
 
@@ -261,7 +323,9 @@ impl Aconfigd {
             Some(ProtoListStorageMessageMsg::PackageName(package)) => {
                 self.storage_manager.list_flags_in_package(package)
             }
-            _ => Err(AconfigdError::InvalidSocketRequest(anyhow!("Invalid list storage type num"))),
+            _ => Err(AconfigdError::InvalidSocketRequest {
+                errmsg: "Invalid list storage type".to_string(),
+            }),
         }?;
         let mut return_pb = ProtoStorageReturnMessage::new();
         let result = return_pb.mut_list_storage_message();
@@ -286,7 +350,7 @@ impl Aconfigd {
     }
 
     /// Handle socket request
-    pub fn handle_socket_request(
+    fn handle_socket_request(
         &mut self,
         request_pb: &ProtoStorageRequestMessage,
     ) -> Result<ProtoStorageReturnMessage, AconfigdError> {
@@ -312,8 +376,60 @@ impl Aconfigd {
             Some(ProtoStorageRequestMessageMsg::ListStorageMessage(_)) => {
                 self.handle_list_storage(request_pb.list_storage_message())
             }
-            _ => Err(AconfigdError::InvalidSocketRequest(anyhow!("Invalid socket request type"))),
+            _ => Err(AconfigdError::InvalidSocketRequest { errmsg: String::new() }),
         }
+    }
+
+    /// Handle socket request from a unix stream
+    pub fn handle_socket_request_from_stream(
+        &mut self,
+        stream: &mut UnixStream,
+    ) -> Result<(), AconfigdError> {
+        let mut length_buffer = [0u8; 4];
+        stream
+            .read_exact(&mut length_buffer)
+            .map_err(|errmsg| AconfigdError::FailToReadFromSocket { errmsg })?;
+        let mut message_length = u32::from_be_bytes(length_buffer);
+
+        let mut request_buffer = vec![0u8; message_length as usize];
+        stream
+            .read_exact(&mut request_buffer)
+            .map_err(|errmsg| AconfigdError::FailToReadFromSocket { errmsg })?;
+
+        let requests: &ProtoStorageRequestMessages =
+            &protobuf::Message::parse_from_bytes(&request_buffer[..]).map_err(|errmsg| {
+                AconfigdError::FailToParsePbFromBytes { file: "socket request".to_string(), errmsg }
+            })?;
+
+        let mut return_msgs = ProtoStorageReturnMessages::new();
+        for request in requests.msgs.iter() {
+            let return_pb = match self.handle_socket_request(request) {
+                Ok(return_msg) => return_msg,
+                Err(errmsg) => {
+                    error!("failed to handle socket request: {}", errmsg);
+                    let mut return_msg = ProtoStorageReturnMessage::new();
+                    return_msg.set_error_message(format!(
+                        "failed to handle socket request: {:?}",
+                        errmsg
+                    ));
+                    return_msg
+                }
+            };
+            return_msgs.msgs.push(return_pb);
+        }
+
+        let bytes = protobuf::Message::write_to_bytes(&return_msgs).map_err(|errmsg| {
+            AconfigdError::FailToSerializePb { file: "socket".to_string(), errmsg }
+        })?;
+
+        message_length = bytes.len() as u32;
+        length_buffer = message_length.to_be_bytes();
+        stream
+            .write_all(&length_buffer)
+            .map_err(|errmsg| AconfigdError::FailToWriteToSocket { errmsg })?;
+        stream.write_all(&bytes).map_err(|errmsg| AconfigdError::FailToWriteToSocket { errmsg })?;
+
+        Ok(())
     }
 }
 
@@ -321,11 +437,14 @@ impl Aconfigd {
 mod tests {
     use super::*;
     use crate::test_utils::{has_same_content, ContainerMock, StorageRootDirMock};
-    use crate::utils::read_pb_from_file;
+    use crate::utils::{get_files_digest, read_pb_from_file};
     use aconfigd_protos::{
         ProtoFlagOverride, ProtoFlagOverrideType, ProtoLocalFlagOverrides,
         ProtoPersistStorageRecord,
     };
+    use std::net::Shutdown;
+    use std::os::fd::{FromRawFd, IntoRawFd, RawFd};
+    use tempfile::tempfile;
 
     fn create_mock_aconfigd(root_dir: &StorageRootDirMock) -> Aconfigd {
         Aconfigd::new(root_dir.tmp_dir.path(), &root_dir.flags_dir.join("storage_records.pb"))
@@ -369,6 +488,15 @@ mod tests {
         assert!(boot_flag_info.exists());
         assert!(has_same_content(&container.flag_info, &boot_flag_info));
 
+        let digest = get_files_digest(
+            &[
+                container.package_map.as_path(),
+                container.flag_map.as_path(),
+                container.flag_val.as_path(),
+                container.flag_info.as_path(),
+            ][..],
+        )
+        .unwrap();
         let pb = read_pb_from_file::<ProtoPersistStorageRecords>(&aconfigd.persist_storage_records)
             .unwrap();
         assert_eq!(pb.records.len(), 1);
@@ -379,7 +507,7 @@ mod tests {
         entry.set_flag_map(container.flag_map.display().to_string());
         entry.set_flag_val(container.flag_val.display().to_string());
         entry.set_flag_info(container.flag_info.display().to_string());
-        entry.set_digest(String::new());
+        entry.set_digest(digest);
         assert_eq!(pb.records[0], entry);
     }
 
@@ -403,7 +531,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
         add_mockup_container_storage(&container, &mut aconfigd);
-        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
 
         let mut request = ProtoStorageRequestMessage::new();
         let actual_request = request.mut_flag_override_message();
@@ -429,7 +557,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
         add_mockup_container_storage(&container, &mut aconfigd);
-        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
 
         let mut request = ProtoStorageRequestMessage::new();
         let actual_request = request.mut_flag_override_message();
@@ -455,7 +583,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
         add_mockup_container_storage(&container, &mut aconfigd);
-        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
 
         let mut request = ProtoStorageRequestMessage::new();
         let actual_request = request.mut_flag_override_message();
@@ -481,7 +609,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
         add_mockup_container_storage(&container, &mut aconfigd);
-        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
 
         let mut request = ProtoStorageRequestMessage::new();
         let actual_request = request.mut_flag_override_message();
@@ -491,7 +619,7 @@ mod tests {
         let return_msg = aconfigd.handle_socket_request(&request);
         assert!(return_msg.is_err());
         if let Err(errmsg) = return_msg {
-            assert_eq!("cannot find container", format!("{}", errmsg));
+            assert_eq!("cannot find container for package not_exist", format!("{}", errmsg));
         }
     }
 
@@ -531,7 +659,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
         add_mockup_container_storage(&container, &mut aconfigd);
-        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
 
         let mut flag =
             get_flag_snapshot(&mut aconfigd, "com.android.aconfig.storage.test_1", "enabled_rw");
@@ -595,7 +723,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
         add_mockup_container_storage(&container, &mut aconfigd);
-        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
 
         let mut request = ProtoStorageRequestMessage::new();
         let actual_request = request.mut_flag_query_message();
@@ -604,7 +732,7 @@ mod tests {
         let return_msg = aconfigd.handle_socket_request(&request);
         assert!(return_msg.is_err());
         if let Err(errmsg) = return_msg {
-            assert_eq!("flag does not exist", format!("{}", errmsg));
+            assert_eq!("flag not_exist.not_exist does not exist", format!("{}", errmsg));
         }
     }
 
@@ -614,7 +742,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
         add_mockup_container_storage(&container, &mut aconfigd);
-        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
 
         let mut request = ProtoStorageRequestMessage::new();
         let actual_request = request.mut_flag_override_message();
@@ -659,7 +787,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
         add_mockup_container_storage(&container, &mut aconfigd);
-        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
 
         let mut request = ProtoStorageRequestMessage::new();
         let actual_request = request.mut_flag_override_message();
@@ -708,7 +836,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
         add_mockup_container_storage(&container, &mut aconfigd);
-        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
 
         let mut request = ProtoStorageRequestMessage::new();
         let actual_request = request.mut_flag_override_message();
@@ -727,7 +855,7 @@ mod tests {
         let return_msg = aconfigd.handle_socket_request(&request);
         assert!(return_msg.is_err());
         if let Err(errmsg) = return_msg {
-            assert_eq!("cannot find container", format!("{}", errmsg));
+            assert_eq!("cannot find container for package abc", format!("{}", errmsg));
         }
     }
 
@@ -737,7 +865,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
         add_mockup_container_storage(&container, &mut aconfigd);
-        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
 
         let mut request = ProtoStorageRequestMessage::new();
         let actual_request = request.mut_flag_override_message();
@@ -783,7 +911,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
         add_mockup_container_storage(&container, &mut aconfigd);
-        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
 
         let mut request = ProtoStorageRequestMessage::new();
         let actual_request = request.mut_list_storage_message();
@@ -824,7 +952,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
         add_mockup_container_storage(&container, &mut aconfigd);
-        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
 
         let mut request = ProtoStorageRequestMessage::new();
         let actual_request = request.mut_list_storage_message();
@@ -832,7 +960,7 @@ mod tests {
         let return_msg = aconfigd.handle_socket_request(&request);
         assert!(return_msg.is_err());
         if let Err(errmsg) = return_msg {
-            assert_eq!("cannot find container", format!("{}", errmsg));
+            assert_eq!("cannot find container for package not_exist", format!("{}", errmsg));
         }
     }
 
@@ -842,7 +970,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
         add_mockup_container_storage(&container, &mut aconfigd);
-        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
 
         let mut request = ProtoStorageRequestMessage::new();
         let actual_request = request.mut_list_storage_message();
@@ -860,7 +988,7 @@ mod tests {
         let root_dir = StorageRootDirMock::new();
         let mut aconfigd = create_mock_aconfigd(&root_dir);
         add_mockup_container_storage(&container, &mut aconfigd);
-        aconfigd.storage_manager.create_storage_boot_copy("mockup").unwrap();
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
 
         let mut request = ProtoStorageRequestMessage::new();
         let actual_request = request.mut_list_storage_message();
@@ -868,7 +996,112 @@ mod tests {
         let return_msg = aconfigd.handle_socket_request(&request);
         assert!(return_msg.is_err());
         if let Err(errmsg) = return_msg {
-            assert_eq!("cannot find container", format!("{}", errmsg));
+            assert_eq!("fail to get storage files for not_exist", format!("{}", errmsg));
         }
+    }
+
+    #[test]
+    fn test_aconfigd_unix_stream() {
+        let container = ContainerMock::new();
+        let root_dir = StorageRootDirMock::new();
+        let mut aconfigd = create_mock_aconfigd(&root_dir);
+        add_mockup_container_storage(&container, &mut aconfigd);
+        aconfigd.storage_manager.apply_all_staged_overrides("mockup").unwrap();
+
+        let mut request = ProtoStorageRequestMessage::new();
+        let actual_request = request.mut_flag_query_message();
+        actual_request.set_package_name("abc".to_string());
+        actual_request.set_flag_name("def".to_string());
+        let bytes = protobuf::Message::write_to_bytes(&request).unwrap();
+
+        let (mut stream1, mut stream2) = UnixStream::pair().unwrap();
+        let length_bytes = (bytes.len() as u32).to_be_bytes();
+        stream1.write_all(&length_bytes).unwrap();
+        stream1.write_all(&bytes).unwrap();
+        stream1.shutdown(Shutdown::Write).unwrap();
+        let result = aconfigd.handle_socket_request_from_stream(&mut stream2);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_negative_aconfigd_unix_stream() {
+        let root_dir = StorageRootDirMock::new();
+        let mut aconfigd = create_mock_aconfigd(&root_dir);
+
+        let (mut stream1, mut stream2) = UnixStream::pair().unwrap();
+        let length_bytes = 11_u32.to_be_bytes();
+        stream1.write_all(&length_bytes).unwrap();
+        stream1.write_all(b"hello world").unwrap();
+        stream1.shutdown(Shutdown::Write).unwrap();
+        let result = aconfigd.handle_socket_request_from_stream(&mut stream2);
+        assert!(result.is_err());
+        if let Err(errmsg) = result {
+            assert_eq!("fail to parse to protobuf from bytes for socket request: Error(WireError(UnexpectedWireType(EndGroup)))", format!("{}", errmsg));
+        }
+    }
+
+    #[test]
+    fn test_initialize_platform_storage_fresh_install() {
+        let root_dir = StorageRootDirMock::new();
+        let mut aconfigd = create_mock_aconfigd(&root_dir);
+        aconfigd.initialize_platform_storage().unwrap();
+        assert!(aconfigd.persist_storage_records.exists());
+        let pb = read_pb_from_file::<ProtoPersistStorageRecords>(&aconfigd.persist_storage_records)
+            .unwrap();
+        assert_eq!(pb.records.len(), 3);
+
+        for container in ["system", "product", "vendor"] {
+            let aconfig_dir = PathBuf::from("/".to_string() + container + "/etc/aconfig");
+            let default_package_map = aconfig_dir.join("package.map");
+            let default_flag_map = aconfig_dir.join("flag.map");
+            let default_flag_val = aconfig_dir.join("flag.val");
+            let default_flag_info = aconfig_dir.join("flag.info");
+
+            let persist_package_map =
+                root_dir.maps_dir.join(container.to_string() + ".package.map");
+            let persist_flag_map = root_dir.maps_dir.join(container.to_string() + ".flag.map");
+            let persist_flag_val = root_dir.flags_dir.join(container.to_string() + ".val");
+            let persist_flag_info = root_dir.flags_dir.join(container.to_string() + ".info");
+            let boot_flag_val = root_dir.boot_dir.join(container.to_string() + ".val");
+            let boot_flag_info = root_dir.boot_dir.join(container.to_string() + ".info");
+            let local_overrides =
+                root_dir.flags_dir.join(container.to_string() + "_local_overrides.pb");
+
+            assert!(has_same_content(&persist_package_map, &default_package_map));
+            assert!(has_same_content(&persist_flag_map, &default_flag_map));
+            assert!(has_same_content(&persist_flag_val, &default_flag_val));
+            assert!(has_same_content(&persist_flag_info, &default_flag_info));
+            assert!(has_same_content(&boot_flag_val, &default_flag_val));
+            assert!(has_same_content(&boot_flag_info, &default_flag_info));
+            assert!(local_overrides.exists());
+
+            let mut entry = ProtoPersistStorageRecord::new();
+            entry.set_version(1);
+            entry.set_container(container.to_string());
+            entry.set_package_map(default_package_map.display().to_string());
+            entry.set_flag_map(default_flag_map.display().to_string());
+            entry.set_flag_val(default_flag_val.display().to_string());
+            entry.set_flag_info(default_flag_info.display().to_string());
+            let digest = get_files_digest(
+                &[
+                    default_package_map.as_path(),
+                    default_flag_map.as_path(),
+                    default_flag_val.as_path(),
+                    default_flag_info.as_path(),
+                ][..],
+            )
+            .unwrap();
+            entry.set_digest(digest);
+            assert!(pb.records.iter().any(|x| *x == entry));
+        }
+    }
+
+    #[test]
+    fn test_initialize_mainline_storage() {
+        let root_dir = StorageRootDirMock::new();
+        let mut aconfigd = create_mock_aconfigd(&root_dir);
+        aconfigd.initialize_mainline_storage().unwrap();
+        let entries: Vec<_> = std::fs::read_dir(&root_dir.flags_dir).into_iter().collect();
+        assert!(entries.len() > 0);
     }
 }
