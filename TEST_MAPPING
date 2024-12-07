@@ -1,7 +1,10 @@
 {
   "postsubmit": [
-     {
-       "name": "ConfigInfrastructureServiceUnitTests"
-     }
+    {
+      "name": "ConfigInfrastructureServiceUnitTests"
+    },
+    {
+      "name": "AconfigPackageTests"
+    }
   ]
 }
