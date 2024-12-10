@@ -31,6 +31,8 @@ import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * An {@code aconfig} package containing the enabled state of its flags.
@@ -50,6 +52,8 @@ public class AconfigPackage {
     private static final String SYSTEM_MAP = "/metadata/aconfig/maps/system.package.map";
     private static final String PMAP_FILE_EXT = ".package.map";
 
+    private static final Map<String, PackageTable> sPackageTableCache = new HashMap<>();
+
     private FlagTable mFlagTable;
     private FlagValueList mFlagValueList;
 
@@ -57,6 +61,28 @@ public class AconfigPackage {
     private int mPackageId = -1;
 
     private AconfigPackage() {}
+
+    static {
+        File mapDir = new File(MAP_PATH);
+        String[] mapFiles = mapDir.list();
+        if (mapFiles == null) {
+            mapFiles = new String[0];
+        }
+
+        try {
+            for (String file : mapFiles) {
+                if (!file.endsWith(PMAP_FILE_EXT)) {
+                    continue;
+                }
+                PackageTable pTable = PackageTable.fromBytes(mapStorageFile(MAP_PATH + file));
+                for (String packageName : pTable.getPackageList()) {
+                    sPackageTableCache.put(packageName, pTable);
+                }
+            }
+        } catch (Exception e) {
+            // pass
+        }
+    }
 
     /**
      * Loads an Aconfig Package from Aconfig Storage.
@@ -76,43 +102,13 @@ public class AconfigPackage {
         StrictMode.ThreadPolicy oldPolicy = StrictMode.allowThreadDiskReads();
         try {
             AconfigPackage aconfigPackage = new AconfigPackage();
-            PackageTable pTable = null;
-            PackageTable.Node pNode = null;
-
-            try {
-                pTable = PackageTable.fromBytes(mapStorageFile(SYSTEM_MAP));
-                pNode = pTable.get(packageName);
-            } catch (Exception e) {
-                // Ignore exceptions when loading the system map file.
-            }
-
-            if (pNode == null) {
-                File mapDir = new File(MAP_PATH);
-                String[] mapFiles = mapDir.list();
-                if (mapFiles == null) {
-                    throw new AconfigStorageReadException(
-                            AconfigStorageReadException.ERROR_PACKAGE_NOT_FOUND,
-                            "package " + packageName + " cannot be found on the device");
-                }
-
-                for (String file : mapFiles) {
-                    if (!file.endsWith(PMAP_FILE_EXT)) {
-                        continue;
-                    }
-                    pTable = PackageTable.fromBytes(mapStorageFile(MAP_PATH + file));
-                    pNode = pTable.get(packageName);
-                    if (pNode != null) {
-                        break;
-                    }
-                }
-            }
-
-            if (pNode == null) {
+            PackageTable pTable = sPackageTableCache.get(packageName);
+            if (pTable == null) {
                 throw new AconfigStorageReadException(
                         AconfigStorageReadException.ERROR_PACKAGE_NOT_FOUND,
                         "package " + packageName + " cannot be found on the device");
             }
-
+            PackageTable.Node pNode = pTable.get(packageName);
             String container = pTable.getHeader().getContainer();
             aconfigPackage.mFlagTable =
                     FlagTable.fromBytes(mapStorageFile(MAP_PATH + container + ".flag.map"));
