@@ -180,10 +180,6 @@ impl StorageFiles {
         Ok(files)
     }
 
-    pub(crate) fn has_boot_copy(&self) -> bool {
-        self.storage_record.boot_flag_val.exists() && self.storage_record.boot_flag_info.exists()
-    }
-
     /// Constructor from a pb record
     pub(crate) fn from_pb(
         pb: &ProtoPersistStorageRecord,
