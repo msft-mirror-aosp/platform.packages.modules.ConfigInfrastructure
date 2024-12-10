@@ -52,20 +52,10 @@ public final class DeviceConfigTest {
 
     @Test
     @RequiresFlagsEnabled(Flags.FLAG_DUMP_IMPROVEMENTS)
-    public void testDump_nullFd() throws Exception {
-        try (StringWriter sw = new StringWriter()) {
-            PrintWriter pw = new PrintWriter(sw);
-            assertThrows(NullPointerException.class, () ->
-                    DeviceConfig.dump(/* fd= */ null, pw, DUMP_PREFIX, DUMP_NO_ARGS));
-        }
-    }
-
-    @Test
-    @RequiresFlagsEnabled(Flags.FLAG_DUMP_IMPROVEMENTS)
     public void testDump_nullPrintWriter() throws Exception {
         try (ParcelFileDescriptor fd = ParcelFileDescriptor.createPipe()[0]) {
             assertThrows(NullPointerException.class, () ->
-                    DeviceConfig.dump(fd, /* printWriter= */ null, DUMP_PREFIX, DUMP_NO_ARGS));
+                    DeviceConfig.dump(/* printWriter= */ null, DUMP_PREFIX, DUMP_NO_ARGS));
         }
     }
 
@@ -110,11 +100,10 @@ public final class DeviceConfigTest {
     }
 
     private String dump(String...args) throws IOException {
-        try (StringWriter sw = new StringWriter();
-                ParcelFileDescriptor fd = ParcelFileDescriptor.createPipe()[0]) {
+        try (StringWriter sw = new StringWriter()) {
             PrintWriter pw = new PrintWriter(sw);
 
-            DeviceConfig.dump(fd, pw, DUMP_PREFIX, args);
+            DeviceConfig.dump(pw, DUMP_PREFIX, args);
 
             pw.flush();
             String dump = sw.toString();
