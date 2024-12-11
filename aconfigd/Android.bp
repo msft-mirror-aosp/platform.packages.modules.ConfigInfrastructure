@@ -61,6 +61,7 @@ rust_test {
     team: "trendy_team_android_core_experiments",
     test_suites: [
         "general-tests",
+        "mts-configinfrastructure",
     ],
     defaults: ["aconfigd_rust.defaults"],
     srcs: ["src/lib.rs"],
