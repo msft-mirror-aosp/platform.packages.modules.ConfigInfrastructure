@@ -420,10 +420,17 @@ impl StorageFilesManager {
     pub(crate) fn list_all_flags(&mut self) -> Result<Vec<FlagSnapshot>, AconfigdError> {
         let mut flags = Vec::new();
         for storage_files in self.all_storage_files.values_mut() {
-            if !storage_files.has_boot_copy() {
-                continue;
+            match storage_files.list_all_flags() {
+                Ok(f) => {
+                    flags.extend(f);
+                }
+                Err(errmsg) => {
+                    debug!(
+                        "failed to list all flags for {}: {:?}",
+                        storage_files.storage_record.container, errmsg
+                    );
+                }
             }
-            flags.extend(storage_files.list_all_flags()?);
         }
         Ok(flags)
     }
