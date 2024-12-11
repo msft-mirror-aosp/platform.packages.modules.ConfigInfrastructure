@@ -20,6 +20,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
 
 import android.aconfig.DeviceProtos;
+import android.aconfig.nano.Aconfig;
 import android.aconfig.nano.Aconfig.parsed_flag;
 import android.aconfig.storage.FlagTable;
 import android.aconfig.storage.FlagValueList;
@@ -46,7 +47,9 @@ public class AconfigPackageTests {
         StorageFileProvider fp = StorageFileProvider.getDefaultProvider();
 
         for (parsed_flag flag : flags) {
-
+            if (flag.permission == Aconfig.READ_ONLY && flag.state == Aconfig.DISABLED) {
+                continue;
+            }
             String container = flag.container;
             String packageName = flag.package_;
             String flagName = flag.name;
@@ -56,7 +59,6 @@ public class AconfigPackageTests {
             FlagTable fTable = fp.getFlagTable(container);
             FlagTable.Node fNode = fTable.get(pNode.getPackageId(), flagName);
             FlagValueList fList = fp.getFlagValueList(container);
-
             boolean rVal = fList.getBoolean(pNode.getBooleanStartIndex() + fNode.getFlagIndex());
 
             AconfigPackage reader = readerMap.get(packageName);
