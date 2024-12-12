@@ -69,7 +69,13 @@ fn main() {
 
     let cli = Cli::parse();
     let command_return = match cli.command {
-        Command::StartSocket => aconfigd_commands::start_socket(),
+        Command::StartSocket => {
+            if cfg!(enable_mainline_aconfigd_socket) {
+                aconfigd_commands::start_socket()
+            } else {
+                Ok(())
+            }
+        }
         Command::Init => aconfigd_commands::init(),
         Command::BootstrapInit => aconfigd_commands::bootstrap_init(),
     };
