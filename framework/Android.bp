@@ -51,7 +51,7 @@ java_sdk_library {
     aconfig_declarations: [
         "configinfra_framework_flags",
     ],
-    jarjar_rules: "jarjar-rules.txt",
+    jarjar_rules: ":framework-configinfrastructure-jarjar",
     lint: {
         baseline_filename: "lint-baseline.xml",
     },
@@ -87,5 +87,12 @@ java_aconfig_library {
     sdk_version: "core_platform",
     libs: [
         "fake_device_config",
+    ],
+}
+
+filegroup {
+    name: "framework-configinfrastructure-jarjar",
+    srcs: [
+        "jarjar-rules.txt",
     ],
 }
