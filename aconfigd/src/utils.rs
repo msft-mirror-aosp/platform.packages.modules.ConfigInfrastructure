@@ -32,6 +32,9 @@ pub(crate) fn set_file_permission(file: &Path, mode: u32) -> Result<(), Aconfigd
 
 /// Copy file
 pub(crate) fn copy_file(src: &Path, dst: &Path, mode: u32) -> Result<(), AconfigdError> {
+    if dst.exists() {
+        set_file_permission(dst, 0o644)?;
+    }
     std::fs::copy(src, dst).map_err(|errmsg| AconfigdError::FailToCopyFile {
         src: src.display().to_string(),
         dst: dst.display().to_string(),
