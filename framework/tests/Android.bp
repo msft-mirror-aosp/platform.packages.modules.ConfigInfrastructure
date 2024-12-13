@@ -26,11 +26,12 @@ android_test {
         "junit",
     ],
     libs: [
-        "framework-configinfrastructure.impl"
+        "framework-configinfrastructure.impl",
     ],
     sdk_version: "module_current",
     test_suites: [
         "general-tests",
     ],
+    jarjar_rules: ":framework-configinfrastructure-jarjar",
     team: "trendy_team_android_core_experiments",
 }
