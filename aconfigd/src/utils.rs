@@ -45,10 +45,13 @@ pub(crate) fn copy_file(src: &Path, dst: &Path, mode: u32) -> Result<(), Aconfig
 
 /// Remove file
 pub(crate) fn remove_file(src: &Path) -> Result<(), AconfigdError> {
-    std::fs::remove_file(src).map_err(|errmsg| AconfigdError::FailToRemoveFile {
-        file: src.display().to_string(),
-        errmsg,
-    })
+    if let Ok(true) = src.try_exists() {
+        std::fs::remove_file(src).map_err(|errmsg| AconfigdError::FailToRemoveFile {
+            file: src.display().to_string(),
+            errmsg,
+        })?;
+    }
+    Ok(())
 }
 
 /// Read pb from file
