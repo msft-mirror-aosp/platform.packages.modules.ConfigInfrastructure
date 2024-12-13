@@ -54,6 +54,10 @@ rust_binary {
         "liblibc",
         "libaconfig_new_storage_flags_rust",
     ],
+    cfgs: select(release_flag("RELEASE_ENABLE_MAINLINE_ACONFIGD_SOCKET"), {
+        true: ["enable_mainline_aconfigd_socket"],
+        default: [],
+    }),
 }
 
 rust_test {
