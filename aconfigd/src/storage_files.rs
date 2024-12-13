@@ -206,9 +206,6 @@ impl StorageFiles {
             digest: pb.digest().to_string(),
         };
 
-        copy_file(&record.persist_flag_val, &record.boot_flag_val, 0o644)?;
-        copy_file(&record.persist_flag_info, &record.boot_flag_info, 0o644)?;
-
         Ok(Self {
             storage_record: record,
             package_map: None,
@@ -1168,15 +1165,6 @@ mod tests {
             mutable_boot_flag_val: None,
             mutable_boot_flag_info: None,
         };
-
-        assert!(has_same_content(
-            &storage_files.storage_record.persist_flag_val,
-            &storage_files.storage_record.boot_flag_val
-        ));
-        assert!(has_same_content(
-            &storage_files.storage_record.persist_flag_info,
-            &storage_files.storage_record.boot_flag_info
-        ));
 
         assert_eq!(storage_files, expected_storage_files);
     }
