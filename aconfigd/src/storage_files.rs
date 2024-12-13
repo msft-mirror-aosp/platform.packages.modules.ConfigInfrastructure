@@ -180,10 +180,6 @@ impl StorageFiles {
         Ok(files)
     }
 
-    pub(crate) fn has_boot_copy(&self) -> bool {
-        self.storage_record.boot_flag_val.exists() && self.storage_record.boot_flag_info.exists()
-    }
-
     /// Constructor from a pb record
     pub(crate) fn from_pb(
         pb: &ProtoPersistStorageRecord,
@@ -209,9 +205,6 @@ impl StorageFiles {
             boot_flag_info: root_dir.join("boot").join(pb.container().to_string() + ".info"),
             digest: pb.digest().to_string(),
         };
-
-        copy_file(&record.persist_flag_val, &record.boot_flag_val, 0o644)?;
-        copy_file(&record.persist_flag_info, &record.boot_flag_info, 0o644)?;
 
         Ok(Self {
             storage_record: record,
@@ -1172,15 +1165,6 @@ mod tests {
             mutable_boot_flag_val: None,
             mutable_boot_flag_info: None,
         };
-
-        assert!(has_same_content(
-            &storage_files.storage_record.persist_flag_val,
-            &storage_files.storage_record.boot_flag_val
-        ));
-        assert!(has_same_content(
-            &storage_files.storage_record.persist_flag_info,
-            &storage_files.storage_record.boot_flag_info
-        ));
 
         assert_eq!(storage_files, expected_storage_files);
     }
