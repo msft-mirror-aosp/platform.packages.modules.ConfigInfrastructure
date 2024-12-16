@@ -32,6 +32,9 @@ pub(crate) fn set_file_permission(file: &Path, mode: u32) -> Result<(), Aconfigd
 
 /// Copy file
 pub(crate) fn copy_file(src: &Path, dst: &Path, mode: u32) -> Result<(), AconfigdError> {
+    if dst.exists() {
+        set_file_permission(dst, 0o644)?;
+    }
     std::fs::copy(src, dst).map_err(|errmsg| AconfigdError::FailToCopyFile {
         src: src.display().to_string(),
         dst: dst.display().to_string(),
@@ -42,10 +45,13 @@ pub(crate) fn copy_file(src: &Path, dst: &Path, mode: u32) -> Result<(), Aconfig
 
 /// Remove file
 pub(crate) fn remove_file(src: &Path) -> Result<(), AconfigdError> {
-    std::fs::remove_file(src).map_err(|errmsg| AconfigdError::FailToRemoveFile {
-        file: src.display().to_string(),
-        errmsg,
-    })
+    if let Ok(true) = src.try_exists() {
+        std::fs::remove_file(src).map_err(|errmsg| AconfigdError::FailToRemoveFile {
+            file: src.display().to_string(),
+            errmsg,
+        })?;
+    }
+    Ok(())
 }
 
 /// Read pb from file

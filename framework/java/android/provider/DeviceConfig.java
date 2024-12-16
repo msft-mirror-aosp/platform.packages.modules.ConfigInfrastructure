@@ -1560,6 +1560,9 @@ public final class DeviceConfig {
         }
     }
 
+    // TODO(b/364399200): should provide a getOnPropertiesChangedListeners() methods instead and let
+    // caller implement dump() instead
+
     // NOTE: this API is only used by the framework code, but using MODULE_LIBRARIES causes a
     // build-time error on CtsDeviceConfigTestCases, so it's using PRIVILEGED_APPS.
     /**
@@ -1571,8 +1574,7 @@ public final class DeviceConfig {
      * dynamically added in the future, without documentation - this method is meant only for
      * debugging purposes, and should not be used as a formal API.
      *
-     * @param fd file descriptor that will output the dump state. Typically used for binary dumps.
-     * @param printWriter print writer that will output the dump state. Typically used for formatted text.
+     * @param printWriter print writer that will output the dump state.
      * @param prefix prefix added to each line
      * @param args (optional) arguments passed by {@code dumpsys}.
      *
@@ -1580,13 +1582,11 @@ public final class DeviceConfig {
      */
     @SystemApi(client = SystemApi.Client.PRIVILEGED_APPS)
     @FlaggedApi(Flags.FLAG_DUMP_IMPROVEMENTS)
-    @RequiresPermission(DUMP)
-    public static void dump(@NonNull ParcelFileDescriptor fd, @NonNull PrintWriter printWriter,
-            @NonNull String dumpPrefix, @Nullable String[] args) {
+    public static void dump(@NonNull PrintWriter printWriter, @NonNull String dumpPrefix,
+            @Nullable String[] args) {
         if (DEBUG) {
             Slog.d(TAG, "dump(): args=" + Arrays.toString(args));
         }
-        Objects.requireNonNull(fd, "fd cannot be null");
         Objects.requireNonNull(printWriter, "printWriter cannot be null");
 
         Comparator<OnPropertiesChangedListener> comparator = (o1, o2) -> o1.toString()

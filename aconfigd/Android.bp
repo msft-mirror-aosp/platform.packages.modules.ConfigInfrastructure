@@ -52,7 +52,12 @@ rust_binary {
         "libaconfigd_rust",
         "libandroid_logger",
         "liblibc",
+        "libaconfig_new_storage_flags_rust",
     ],
+    cfgs: select(release_flag("RELEASE_ENABLE_MAINLINE_ACONFIGD_SOCKET"), {
+        true: ["enable_mainline_aconfigd_socket"],
+        default: [],
+    }),
 }
 
 rust_test {
@@ -60,6 +65,7 @@ rust_test {
     team: "trendy_team_android_core_experiments",
     test_suites: [
         "general-tests",
+        "mts-configinfrastructure",
     ],
     defaults: ["aconfigd_rust.defaults"],
     srcs: ["src/lib.rs"],
