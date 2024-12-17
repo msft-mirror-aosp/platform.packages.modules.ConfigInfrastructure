@@ -77,7 +77,7 @@ public class AconfigPackageInternalTests {
     }
 
     @Test
-    public void testAconfigPackage_load_withError() throws IOException {
+    public void testAconfigPackageInternal_load_withError() throws IOException {
         // container not found fake_container
         AconfigStorageException e =
                 assertThrows(

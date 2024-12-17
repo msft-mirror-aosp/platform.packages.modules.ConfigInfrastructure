@@ -17,13 +17,17 @@
 package android.os.flagging;
 
 import static android.provider.flags.Flags.FLAG_NEW_STORAGE_PUBLIC_API;
+import static android.provider.flags.Flags.readPlatformFromPlatformApi;
 
+import android.aconfig.storage.AconfigStorageException;
 import android.aconfig.storage.FlagTable;
 import android.aconfig.storage.FlagValueList;
 import android.aconfig.storage.PackageTable;
 import android.annotation.FlaggedApi;
 import android.annotation.NonNull;
+import android.os.Build;
 import android.os.StrictMode;
+import android.util.Log;
 
 import java.io.Closeable;
 import java.io.File;
@@ -46,13 +50,14 @@ import java.util.Map;
  */
 @FlaggedApi(FLAG_NEW_STORAGE_PUBLIC_API)
 public class AconfigPackage {
-
+    private static final String TAG = "AconfigPackage";
     private static final String MAP_PATH = "/metadata/aconfig/maps/";
     private static final String BOOT_PATH = "/metadata/aconfig/boot/";
-    private static final String SYSTEM_MAP = "/metadata/aconfig/maps/system.package.map";
     private static final String PMAP_FILE_EXT = ".package.map";
 
     private static final Map<String, PackageTable> sPackageTableCache = new HashMap<>();
+    private static final boolean READ_PLATFORM_FROM_PLATFORM_API =
+            readPlatformFromPlatformApi() && Build.VERSION.SDK_INT > 35;
 
     private FlagTable mFlagTable;
     private FlagValueList mFlagValueList;
@@ -60,27 +65,48 @@ public class AconfigPackage {
     private int mPackageBooleanStartOffset = -1;
     private int mPackageId = -1;
 
+    private PlatformAconfigPackage mPlatformAconfigPackage = null;
+
     private AconfigPackage() {}
 
     static {
         File mapDir = new File(MAP_PATH);
         String[] mapFiles = mapDir.list();
-        if (mapFiles == null) {
-            mapFiles = new String[0];
-        }
-
-        try {
-            for (String file : mapFiles) {
-                if (!file.endsWith(PMAP_FILE_EXT)) {
-                    continue;
+        if (mapFiles != null) {
+            if (!READ_PLATFORM_FROM_PLATFORM_API) {
+                for (String file : mapFiles) {
+                    if (!file.endsWith(PMAP_FILE_EXT)) {
+                        continue;
+                    }
+                    try {
+                        PackageTable pTable =
+                                PackageTable.fromBytes(mapStorageFile(MAP_PATH + file));
+                        for (String packageName : pTable.getPackageList()) {
+                            sPackageTableCache.put(packageName, pTable);
+                        }
+                    } catch (Exception e) {
+                        // pass
+                        Log.w(TAG, e.toString());
+                    }
                 }
-                PackageTable pTable = PackageTable.fromBytes(mapStorageFile(MAP_PATH + file));
-                for (String packageName : pTable.getPackageList()) {
-                    sPackageTableCache.put(packageName, pTable);
+            } else {
+                for (String file : mapFiles) {
+                    if (!file.endsWith(PMAP_FILE_EXT)
+                            || PlatformAconfigPackage.PLATFORM_PACKAGE_MAP_FILES.contains(file)) {
+                        continue;
+                    }
+                    try {
+                        PackageTable pTable =
+                                PackageTable.fromBytes(mapStorageFile(MAP_PATH + file));
+                        for (String packageName : pTable.getPackageList()) {
+                            sPackageTableCache.put(packageName, pTable);
+                        }
+                    } catch (Exception e) {
+                        // pass
+                        Log.w(TAG, e.toString());
+                    }
                 }
             }
-        } catch (Exception e) {
-            // pass
         }
     }
 
@@ -102,6 +128,14 @@ public class AconfigPackage {
         StrictMode.ThreadPolicy oldPolicy = StrictMode.allowThreadDiskReads();
         try {
             AconfigPackage aconfigPackage = new AconfigPackage();
+
+            if (READ_PLATFORM_FROM_PLATFORM_API) {
+                aconfigPackage.mPlatformAconfigPackage = PlatformAconfigPackage.load(packageName);
+                if (aconfigPackage.mPlatformAconfigPackage != null) {
+                    return aconfigPackage;
+                }
+            }
+
             PackageTable pTable = sPackageTableCache.get(packageName);
             if (pTable == null) {
                 throw new AconfigStorageReadException(
@@ -119,6 +153,9 @@ public class AconfigPackage {
             return aconfigPackage;
         } catch (AconfigStorageReadException e) {
             throw e;
+        } catch (AconfigStorageException e) {
+            throw new AconfigStorageReadException(
+                    e.getErrorCode(), "Fail to create AconfigPackage", e);
         } catch (Exception e) {
             throw new AconfigStorageReadException(
                     AconfigStorageReadException.ERROR_GENERIC, "Fail to create AconfigPackage", e);
@@ -140,6 +177,10 @@ public class AconfigPackage {
      */
     @FlaggedApi(FLAG_NEW_STORAGE_PUBLIC_API)
     public boolean getBooleanFlagValue(@NonNull String flagName, boolean defaultValue) {
+        if (READ_PLATFORM_FROM_PLATFORM_API && mPlatformAconfigPackage != null) {
+            return mPlatformAconfigPackage.getBooleanFlagValue(flagName, defaultValue);
+        }
+
         FlagTable.Node fNode = mFlagTable.get(mPackageId, flagName);
         if (fNode == null) {
             return defaultValue;
