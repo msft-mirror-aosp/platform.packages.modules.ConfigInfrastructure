@@ -2,6 +2,18 @@ package: "android.provider.flags"
 container: "com.android.configinfrastructure"
 
 flag {
+  name: "new_storage_write_system_api"
+  namespace: "core_experiments_team_internal"
+  description: "API flag for writing new storage"
+  bug: "367765164"
+  is_fixed_read_only: true
+  is_exported: true
+  metadata {
+    purpose: PURPOSE_BUGFIX
+  }
+}
+
+flag {
   name: "read_platform_from_platform_api"
   namespace: "core_experiments_team_internal"
   description: "read the platform related flags from the platform api"
