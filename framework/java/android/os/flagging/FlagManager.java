@@ -58,7 +58,6 @@ public final class FlagManager {
      * android.os.flagging.FlagManager} for pushing flag values to aconfig.
      *
      * @see Context#getSystemService(String)
-     *
      * @hide
      */
     @FlaggedApi(Flags.FLAG_STAGE_FLAGS_FOR_BUILD)
@@ -81,7 +80,7 @@ public final class FlagManager {
      *
      * @param buildFingerprint a system build fingerprint identifier.
      * @param flags map from flag qualified name to new value.
-     * @throws AconfigWriteException if the write fails.
+     * @throws AconfigStorageWriteException if the write fails.
      * @see android.os.Build.FINGERPRINT
      */
     @FlaggedApi(Flags.FLAG_STAGE_FLAGS_FOR_BUILD)
@@ -100,8 +99,7 @@ public final class FlagManager {
      * set of flags to take effect is determined on the next boot.
      *
      * @param flags map from flag qualified name to new value.
-     * @throws AconfigWriteException if the write fails.
-     *
+     * @throws AconfigStorageWriteException if the write fails.
      */
     @FlaggedApi(Flags.FLAG_STAGE_FLAGS_FOR_BUILD)
     public void setBooleanOverridesOnReboot(@NonNull Map<String, Boolean> flags) {
@@ -200,10 +198,11 @@ public final class FlagManager {
             }
 
             if (!errorMessage.isEmpty()) {
-                throw new AconfigWriteException("error(s) writing aconfig flags: " + errorMessage);
+                throw new AconfigStorageWriteException(
+                        "error(s) writing aconfig flags: " + errorMessage);
             }
         } catch (IOException e) {
-            throw new AconfigWriteException("IO error writing aconfig flags", e);
+            throw new AconfigStorageWriteException("IO error writing aconfig flags", e);
         }
     }
 
