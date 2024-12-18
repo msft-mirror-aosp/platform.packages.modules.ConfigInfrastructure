@@ -25,7 +25,10 @@ java_sdk_library {
     defaults: ["framework-module-defaults"],
     permitted_packages: [
         "android.provider",
+        "android.provider.flags",
         "android.provider.aidl",
+
+        "android.os.flagging",
     ],
     apex_available: [
         "com.android.configinfrastructure",
@@ -34,12 +37,63 @@ java_sdk_library {
     sdk_version: "module_current",
     impl_library_visibility: [
         "//packages/modules/ConfigInfrastructure:__subpackages__",
+        "//frameworks/base/ravenwood",
+    ],
+    libs: [
+        "unsupportedappusage",
+        "aconfig_storage_stub",
     ],
     static_libs: [
+        "configinfra_framework_flags_java_lib",
         "modules-utils-build",
+        "aconfig_storage_file_java",
     ],
-    jarjar_rules: "jarjar-rules.txt",
+    aconfig_declarations: [
+        "configinfra_framework_flags",
+    ],
+    jarjar_rules: ":framework-configinfrastructure-jarjar",
     lint: {
         baseline_filename: "lint-baseline.xml",
     },
+}
+
+filegroup {
+    name: "framework-configinfrastructure-ravenwood-policies",
+    srcs: [
+        "framework-configinfrastructure-ravenwood-policies.txt",
+    ],
+    visibility: ["//frameworks/base/ravenwood"],
+}
+
+aconfig_declarations {
+    name: "configinfra_framework_flags",
+    package: "android.provider.flags",
+    container: "com.android.configinfrastructure",
+    srcs: [
+        "flags.aconfig",
+    ],
+}
+
+java_aconfig_library {
+    name: "configinfra_framework_flags_java_lib",
+    min_sdk_version: "34",
+    apex_available: [
+        "com.android.configinfrastructure",
+        "//apex_available:platform", // Used by DeviceConfigService
+    ],
+    visibility: [
+        "//visibility:public",
+    ],
+    aconfig_declarations: "configinfra_framework_flags",
+    sdk_version: "core_platform",
+    libs: [
+        "fake_device_config",
+    ],
+}
+
+filegroup {
+    name: "framework-configinfrastructure-jarjar",
+    srcs: [
+        "jarjar-rules.txt",
+    ],
 }

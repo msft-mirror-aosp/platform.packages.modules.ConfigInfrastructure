@@ -1,0 +1,42 @@
+# Copyright (C) 2024 The Android Open Source Project
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+service mainline_aconfigd_bootstrap_init /apex/com.android.configinfrastructure/bin/aconfigd-mainline bootstrap-init
+    class core
+    user system
+    group system
+    oneshot
+    disabled # does not start with the core class
+    file /dev/kmsg w
+    #turn it on when b/312444587 completes
+    #reboot_on_failure reboot
+
+service mainline_aconfigd_init /apex/com.android.configinfrastructure/bin/aconfigd-mainline init
+    class core
+    user system
+    group system
+    oneshot
+    disabled # does not start with the core class
+    file /dev/kmsg w
+    #turn it on when b/312444587 completes
+    #reboot_on_failure reboot
+
+service mainline_aconfigd_socket_service /apex/com.android.configinfrastructure/bin/aconfigd-mainline start-socket
+    class core
+    user system
+    group system
+    oneshot
+    disabled # does not start with the core class
+    file /dev/kmsg w
+    socket aconfigd_mainline stream 666 system system

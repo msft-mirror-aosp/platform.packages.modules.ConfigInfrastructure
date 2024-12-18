@@ -1,0 +1,86 @@
+// Copyright (C) 2024 The Android Open Source Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+rust_defaults {
+    name: "aconfigd_rust.defaults",
+    edition: "2021",
+    lints: "none",
+    rustlibs: [
+        "libaconfig_storage_file",
+        "libaconfig_storage_read_api",
+        "libaconfig_storage_write_api",
+        "libaconfigd_protos_rust",
+        "libanyhow",
+        "libclap",
+        "libmemmap2",
+        "libopenssl",
+        "liblog_rust",
+        "libprotobuf",
+        "libthiserror",
+        "librustutils",
+    ],
+    apex_available: [
+        "com.android.configinfrastructure",
+        "//apex_available:platform",
+    ],
+    min_sdk_version: "34",
+}
+
+rust_library {
+    name: "libaconfigd_rust",
+    crate_name: "aconfigd_rust",
+    defaults: ["aconfigd_rust.defaults"],
+    srcs: ["src/lib.rs"],
+}
+
+rust_binary {
+    name: "aconfigd-mainline",
+    defaults: ["aconfigd_rust.defaults"],
+    srcs: ["src/main.rs"],
+    rustlibs: [
+        "libaconfigd_rust",
+        "libandroid_logger",
+        "liblibc",
+        "libaconfig_new_storage_flags_rust",
+    ],
+    cfgs: select(release_flag("RELEASE_ENABLE_MAINLINE_ACONFIGD_SOCKET"), {
+        true: ["enable_mainline_aconfigd_socket"],
+        default: [],
+    }),
+}
+
+rust_test {
+    name: "libaconfigd_rust.test",
+    team: "trendy_team_android_core_experiments",
+    test_suites: [
+        "general-tests",
+        "mts-configinfrastructure",
+    ],
+    defaults: ["aconfigd_rust.defaults"],
+    srcs: ["src/lib.rs"],
+    rustlibs: [
+        "libtempfile",
+    ],
+    data: [
+        "./tests/data/package.map",
+        "./tests/data/flag.map",
+        "./tests/data/flag.val",
+        "./tests/data/flag.info",
+        "./tests/data/container_with_more_flags.package.map",
+        "./tests/data/container_with_more_flags.flag.map",
+        "./tests/data/container_with_more_flags.flag.val",
+        "./tests/data/container_with_more_flags.flag.info",
+    ],
+    require_root: true
+}

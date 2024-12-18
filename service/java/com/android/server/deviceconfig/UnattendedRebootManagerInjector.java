@@ -29,8 +29,12 @@ interface UnattendedRebootManagerInjector {
 
   int getRebootFrequency();
 
-  /** Reboot Alarm injector. */
+  /** Alarm injectors. */
   void setRebootAlarm(Context context, long rebootTimeMillis);
+
+  void setPrepareForUnattendedRebootFallbackAlarm(Context context, long delayMillis);
+
+  void cancelPrepareForUnattendedRebootFallbackAlarm(Context context);
 
   /** Connectivity injector. */
   void triggerRebootOnNetworkAvailable(Context context);

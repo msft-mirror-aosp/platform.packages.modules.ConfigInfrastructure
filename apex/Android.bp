@@ -41,7 +41,11 @@ bootclasspath_fragment {
         // result in a build failure due to inconsistent flags.
         package_prefixes: [
             "android.provider.aidl",
+            "android.provider.flags",
+            "android.provider.internal.aconfig.storage",
             "android.provider.internal.modules.utils.build",
+
+            "android.os.flagging",
         ],
     },
     // The bootclasspath_fragments that provide APIs on which this depends.
@@ -79,6 +83,12 @@ android_app_certificate {
     certificate: "com.android.configinfrastructure",
 }
 
+prebuilt_etc {
+    name: "com.android.configinfrastrcture.init.rc",
+    src: "configinfrastructure.rc",
+    installable: false,
+}
+
 apex {
     name: "com.android.configinfrastructure",
     bootclasspath_fragments: ["com.android.configinfrastructure-bootclasspath-fragment"],
@@ -87,8 +97,12 @@ apex {
         "com.android.configinfrastructure-systemserverclasspath-fragment",
     ],
     manifest: "manifest.json",
-    file_contexts: ":apex.test-file_contexts",
+    file_contexts: ":com.android.configinfrastructure-file_contexts",
+    binaries: [
+        "aconfigd-mainline",
+    ],
     prebuilts: [
+        "com.android.configinfrastrcture.init.rc",
         "current_sdkinfo",
     ],
     min_sdk_version: "34",

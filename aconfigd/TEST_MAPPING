@@ -1,0 +1,8 @@
+{
+  "postsubmit": [
+    {
+      // rust aconfigd unit tests
+      "name": "libaconfigd_rust.test"
+    }
+  ]
+}
