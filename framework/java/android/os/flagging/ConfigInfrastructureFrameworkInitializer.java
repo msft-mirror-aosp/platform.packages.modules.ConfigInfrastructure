@@ -27,7 +27,7 @@ import android.provider.flags.Flags;
  * @hide
  */
 @SystemApi(client = SystemApi.Client.MODULE_LIBRARIES)
-@FlaggedApi(Flags.FLAG_STAGE_FLAGS_FOR_BUILD)
+@FlaggedApi(Flags.FLAG_NEW_STORAGE_PUBLIC_API)
 public final class ConfigInfrastructureFrameworkInitializer {
     /** Prevent instantiation. */
     private ConfigInfrastructureFrameworkInitializer() {}
@@ -40,7 +40,7 @@ public final class ConfigInfrastructureFrameworkInitializer {
      * <p>If this is called from other places, it throws a {@link IllegalStateException).
      *
      */
-    @FlaggedApi(Flags.FLAG_STAGE_FLAGS_FOR_BUILD)
+    @FlaggedApi(Flags.FLAG_NEW_STORAGE_PUBLIC_API)
     public static void registerServiceWrappers() {
         SystemServiceRegistry.registerContextAwareService(
                 FlagManager.FLAG_SERVICE_NAME,
