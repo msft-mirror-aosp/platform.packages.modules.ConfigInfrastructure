@@ -1,1 +1,8 @@
 rule com.android.modules.utils.** android.provider.internal.modules.utils.@1
+rule android.aconfig.storage.** android.provider.internal.aconfig.storage.@1
+rule com.google.protobuf.** android.provider.configinfra.internal.protobuf.@1
+rule android.aconfigd.** android.internal.configinfra.aconfigd.@1
+
+rule android.provider.flags.*FeatureFlags* android.provider.x.@0
+rule android.provider.flags.FeatureFlags* android.provider.x.@0
+rule android.provider.flags.Flags android.provider.x.@0

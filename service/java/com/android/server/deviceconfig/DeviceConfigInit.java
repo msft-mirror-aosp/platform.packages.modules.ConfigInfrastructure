@@ -2,6 +2,7 @@ package com.android.server.deviceconfig;
 
 import static com.android.server.deviceconfig.Flags.enableRebootNotification;
 import static com.android.server.deviceconfig.Flags.enableUnattendedReboot;
+import static com.android.server.deviceconfig.Flags.useDescriptiveLogMessage;
 
 import java.io.IOException;
 import java.io.FileDescriptor;
@@ -38,7 +39,7 @@ public class DeviceConfigInit {
     private static final String STAGED_NAMESPACE = "staged";
 
     private static final String SYSTEM_FLAGS_PATH = "/system/etc/aconfig_flags.pb";
-    private static final String SYSTEM_EXT_FLAGS_PATH = "/system_ext/etc/aconfig_flags.pb";
+    private static final String PRODUCT_FLAGS_PATH = "/product/etc/aconfig_flags.pb";
     private static final String VENDOR_FLAGS_PATH = "/vendor/etc/aconfig_flags.pb";
 
     private static final String CONFIGURATION_NAMESPACE = "configuration";
@@ -79,7 +80,12 @@ public class DeviceConfigInit {
             for (String flagName : overrideProperties.getKeyset()) {
                 String fullName = overrideProperties.getNamespace() + "/" + flagName;
                 String value = overrideProperties.getString(flagName, null);
-                Slog.i(TAG, "DeviceConfig sticky override is set: " + fullName + "=" + value);
+                if (useDescriptiveLogMessage()) {
+                    Slog.i(TAG, "DeviceConfig sticky local override is set: "
+                        + fullName + "=" + value);
+                } else {
+                    Slog.i(TAG, "DeviceConfig sticky override is set: " + fullName + "=" + value);
+                }
             }
 
             boolean notificationEnabled =
@@ -88,7 +94,7 @@ public class DeviceConfigInit {
                 Map<String, Set<String>> aconfigFlags = new HashMap<>();
                 try {
                     addAconfigFlagsFromFile(aconfigFlags, SYSTEM_FLAGS_PATH);
-                    addAconfigFlagsFromFile(aconfigFlags, SYSTEM_EXT_FLAGS_PATH);
+                    addAconfigFlagsFromFile(aconfigFlags, PRODUCT_FLAGS_PATH);
                     addAconfigFlagsFromFile(aconfigFlags, VENDOR_FLAGS_PATH);
                 } catch (IOException e) {
                     Slog.e(TAG, "error loading aconfig flags", e);
