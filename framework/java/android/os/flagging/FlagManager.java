@@ -42,7 +42,7 @@ import java.util.Set;
  * @hide
  */
 @SystemApi
-@FlaggedApi(Flags.FLAG_STAGE_FLAGS_FOR_BUILD)
+@FlaggedApi(Flags.FLAG_NEW_STORAGE_PUBLIC_API)
 @SystemService(FlagManager.FLAG_SERVICE_NAME)
 public final class FlagManager {
     /**
@@ -50,7 +50,7 @@ public final class FlagManager {
      *
      * @hide
      */
-    @FlaggedApi(Flags.FLAG_STAGE_FLAGS_FOR_BUILD)
+    @FlaggedApi(Flags.FLAG_NEW_STORAGE_PUBLIC_API)
     public FlagManager(@NonNull Context unusedContext) {}
 
     /**
@@ -58,10 +58,9 @@ public final class FlagManager {
      * android.os.flagging.FlagManager} for pushing flag values to aconfig.
      *
      * @see Context#getSystemService(String)
-     *
      * @hide
      */
-    @FlaggedApi(Flags.FLAG_STAGE_FLAGS_FOR_BUILD)
+    @FlaggedApi(Flags.FLAG_NEW_STORAGE_PUBLIC_API)
     public static final String FLAG_SERVICE_NAME = "flag";
 
     /**
@@ -81,10 +80,10 @@ public final class FlagManager {
      *
      * @param buildFingerprint a system build fingerprint identifier.
      * @param flags map from flag qualified name to new value.
-     * @throws AconfigWriteException if the write fails.
+     * @throws AconfigStorageWriteException if the write fails.
      * @see android.os.Build.FINGERPRINT
      */
-    @FlaggedApi(Flags.FLAG_STAGE_FLAGS_FOR_BUILD)
+    @FlaggedApi(Flags.FLAG_NEW_STORAGE_PUBLIC_API)
     public void setBooleanOverridesOnSystemBuildFingerprint(
             @NonNull String buildFingerprint, @NonNull Map<String, Boolean> flags) {
         StorageRequestMessages requestMessages =
@@ -100,10 +99,9 @@ public final class FlagManager {
      * set of flags to take effect is determined on the next boot.
      *
      * @param flags map from flag qualified name to new value.
-     * @throws AconfigWriteException if the write fails.
-     *
+     * @throws AconfigStorageWriteException if the write fails.
      */
-    @FlaggedApi(Flags.FLAG_STAGE_FLAGS_FOR_BUILD)
+    @FlaggedApi(Flags.FLAG_NEW_STORAGE_PUBLIC_API)
     public void setBooleanOverridesOnReboot(@NonNull Map<String, Boolean> flags) {
         StorageRequestMessages requestMessages =
                 buildFlagOverrideMessages(
@@ -121,7 +119,7 @@ public final class FlagManager {
      * @see clearBooleanLocalOverridesOnReboot
      * @see clearBooleanLocalOverridesImmediately
      */
-    @FlaggedApi(Flags.FLAG_STAGE_FLAGS_FOR_BUILD)
+    @FlaggedApi(Flags.FLAG_NEW_STORAGE_PUBLIC_API)
     public void setBooleanLocalOverridesOnReboot(@NonNull Map<String, Boolean> flags) {
         StorageRequestMessages requestMessages =
                 buildFlagOverrideMessages(Flag.buildFlags(flags), FlagOverrideType.LOCAL_ON_REBOOT);
@@ -141,7 +139,7 @@ public final class FlagManager {
      * @see clearBooleanLocalOverridesOnReboot
      * @see clearBooleanLocalOverridesImmediately
      */
-    @FlaggedApi(Flags.FLAG_STAGE_FLAGS_FOR_BUILD)
+    @FlaggedApi(Flags.FLAG_NEW_STORAGE_PUBLIC_API)
     public void setBooleanLocalOverridesImmediately(@NonNull Map<String, Boolean> flags) {
         StorageRequestMessages requestMessages =
                 buildFlagOverrideMessages(Flag.buildFlags(flags), FlagOverrideType.LOCAL_IMMEDIATE);
@@ -157,7 +155,7 @@ public final class FlagManager {
      * @see setBooleanLocalOverridesOnReboot
      * @see setBooleanLocalOverridesImmediately
      */
-    @FlaggedApi(Flags.FLAG_STAGE_FLAGS_FOR_BUILD)
+    @FlaggedApi(Flags.FLAG_NEW_STORAGE_PUBLIC_API)
     public void clearBooleanLocalOverridesOnReboot(@Nullable Set<String> flags) {
         StorageRequestMessages requestMessages =
                 buildClearFlagOverridesMessages(
@@ -178,7 +176,7 @@ public final class FlagManager {
      * @see setBooleanLocalOverridesOnReboot
      * @see setBooleanLocalOverridesImmediately
      */
-    @FlaggedApi(Flags.FLAG_STAGE_FLAGS_FOR_BUILD)
+    @FlaggedApi(Flags.FLAG_NEW_STORAGE_PUBLIC_API)
     public void clearBooleanLocalOverridesImmediately(@Nullable Set<String> flags) {
         StorageRequestMessages requestMessages =
                 buildClearFlagOverridesMessages(
@@ -200,10 +198,11 @@ public final class FlagManager {
             }
 
             if (!errorMessage.isEmpty()) {
-                throw new AconfigWriteException("error(s) writing aconfig flags: " + errorMessage);
+                throw new AconfigStorageWriteException(
+                        "error(s) writing aconfig flags: " + errorMessage);
             }
         } catch (IOException e) {
-            throw new AconfigWriteException("IO error writing aconfig flags", e);
+            throw new AconfigStorageWriteException("IO error writing aconfig flags", e);
         }
     }
 
