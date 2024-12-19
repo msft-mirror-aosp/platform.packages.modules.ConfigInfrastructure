@@ -279,6 +279,7 @@ final class WritableFlags {
                 "credential_manager/enable_credential_description_api",
                 "credential_manager/enable_credential_manager",
                 "DeviceConfigBootstrapValues/processed_values",
+                "device_config_overrides/namespace1:key1",
                 "device_config_overrides/namespace3:key3",
                 "device_config_overrides/namespace3:key4",
                 "device_config_overrides/namespace4:key3",

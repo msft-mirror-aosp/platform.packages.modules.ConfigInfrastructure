@@ -1,18 +1,18 @@
 // Signature format: 2.0
 package android.os.flagging {
 
-  @FlaggedApi("android.provider.flags.stage_flags_for_build") public class AconfigWriteException extends android.util.AndroidRuntimeException {
-    ctor @FlaggedApi("android.provider.flags.stage_flags_for_build") public AconfigWriteException(@NonNull String);
-    ctor @FlaggedApi("android.provider.flags.stage_flags_for_build") public AconfigWriteException(@NonNull String, @NonNull Throwable);
+  @FlaggedApi("android.provider.flags.stage_flags_for_build") public class AconfigStorageWriteException extends android.util.AndroidRuntimeException {
+    ctor @FlaggedApi("android.provider.flags.stage_flags_for_build") public AconfigStorageWriteException(@NonNull String);
+    ctor @FlaggedApi("android.provider.flags.stage_flags_for_build") public AconfigStorageWriteException(@NonNull String, @NonNull Throwable);
   }
 
-  @FlaggedApi("android.provider.flags.stage_flags_for_build") public final class FlagManager {
-    method @FlaggedApi("android.provider.flags.stage_flags_for_build") public void clearBooleanLocalOverridesImmediately(@Nullable java.util.Set<java.lang.String>);
-    method @FlaggedApi("android.provider.flags.stage_flags_for_build") public void clearBooleanLocalOverridesOnReboot(@Nullable java.util.Set<java.lang.String>);
-    method @FlaggedApi("android.provider.flags.stage_flags_for_build") public void setBooleanLocalOverridesImmediately(@NonNull java.util.Map<java.lang.String,java.lang.Boolean>);
-    method @FlaggedApi("android.provider.flags.stage_flags_for_build") public void setBooleanLocalOverridesOnReboot(@NonNull java.util.Map<java.lang.String,java.lang.Boolean>);
-    method @FlaggedApi("android.provider.flags.stage_flags_for_build") public void setBooleanOverridesOnReboot(@NonNull java.util.Map<java.lang.String,java.lang.Boolean>);
-    method @FlaggedApi("android.provider.flags.stage_flags_for_build") public void setBooleanOverridesOnSystemBuildFingerprint(@NonNull String, @NonNull java.util.Map<java.lang.String,java.lang.Boolean>);
+  @FlaggedApi("android.provider.flags.new_storage_public_api") public final class FlagManager {
+    method @FlaggedApi("android.provider.flags.new_storage_public_api") public void clearBooleanLocalOverridesImmediately(@Nullable java.util.Set<java.lang.String>);
+    method @FlaggedApi("android.provider.flags.new_storage_public_api") public void clearBooleanLocalOverridesOnReboot(@Nullable java.util.Set<java.lang.String>);
+    method @FlaggedApi("android.provider.flags.new_storage_public_api") public void setBooleanLocalOverridesImmediately(@NonNull java.util.Map<java.lang.String,java.lang.Boolean>);
+    method @FlaggedApi("android.provider.flags.new_storage_public_api") public void setBooleanLocalOverridesOnReboot(@NonNull java.util.Map<java.lang.String,java.lang.Boolean>);
+    method @FlaggedApi("android.provider.flags.new_storage_public_api") public void setBooleanOverridesOnReboot(@NonNull java.util.Map<java.lang.String,java.lang.Boolean>);
+    method @FlaggedApi("android.provider.flags.new_storage_public_api") public void setBooleanOverridesOnSystemBuildFingerprint(@NonNull String, @NonNull java.util.Map<java.lang.String,java.lang.Boolean>);
   }
 
 }
