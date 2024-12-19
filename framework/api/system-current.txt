@@ -1,9 +1,9 @@
 // Signature format: 2.0
 package android.os.flagging {
 
-  @FlaggedApi("android.provider.flags.stage_flags_for_build") public class AconfigWriteException extends android.util.AndroidRuntimeException {
-    ctor @FlaggedApi("android.provider.flags.stage_flags_for_build") public AconfigWriteException(@NonNull String);
-    ctor @FlaggedApi("android.provider.flags.stage_flags_for_build") public AconfigWriteException(@NonNull String, @NonNull Throwable);
+  @FlaggedApi("android.provider.flags.stage_flags_for_build") public class AconfigStorageWriteException extends android.util.AndroidRuntimeException {
+    ctor @FlaggedApi("android.provider.flags.stage_flags_for_build") public AconfigStorageWriteException(@NonNull String);
+    ctor @FlaggedApi("android.provider.flags.stage_flags_for_build") public AconfigStorageWriteException(@NonNull String, @NonNull Throwable);
   }
 
   @FlaggedApi("android.provider.flags.new_storage_public_api") public final class FlagManager {

@@ -29,14 +29,14 @@ import android.util.AndroidRuntimeException;
  */
 @SystemApi
 @FlaggedApi(Flags.FLAG_STAGE_FLAGS_FOR_BUILD)
-public class AconfigWriteException extends AndroidRuntimeException {
+public class AconfigStorageWriteException extends AndroidRuntimeException {
     @FlaggedApi(Flags.FLAG_STAGE_FLAGS_FOR_BUILD)
-    public AconfigWriteException(@NonNull String message) {
+    public AconfigStorageWriteException(@NonNull String message) {
         super(message);
     }
 
     @FlaggedApi(Flags.FLAG_STAGE_FLAGS_FOR_BUILD)
-    public AconfigWriteException(@NonNull String message, @NonNull Throwable cause) {
+    public AconfigStorageWriteException(@NonNull String message, @NonNull Throwable cause) {
         super(message, cause);
     }
 }
