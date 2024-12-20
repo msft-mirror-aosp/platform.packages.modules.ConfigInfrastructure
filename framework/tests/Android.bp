@@ -17,8 +17,36 @@ package {
 }
 
 android_test {
+    name: "AconfigPublicApiCtsTests",
+    srcs: [
+        "src/AconfigPublicApiCtsTests.java"
+    ],
+    static_libs: [
+        "aconfig_device_paths_java",
+        "androidx.test.rules",
+        "aconfig_storage_file_java",
+        "configinfra_framework_flags_java_lib",
+        "junit",
+        "flag-junit",
+    ],
+    libs: [
+        "framework-configinfrastructure.impl",
+    ],
+    sdk_version: "module_current",
+    test_suites: [
+        "general-tests",
+        "cts",
+    ],
+    jarjar_rules: ":framework-configinfrastructure-jarjar",
+    team: "trendy_team_android_core_experiments",
+}
+
+android_test {
     name: "AconfigPackageTests",
-    srcs: ["src/**/*.java"],
+    srcs: [
+        "src/AconfigPackageInternalTests.java",
+        "src/AconfigPackageTests.java",
+    ],
     static_libs: [
         "aconfig_device_paths_java",
         "androidx.test.rules",
