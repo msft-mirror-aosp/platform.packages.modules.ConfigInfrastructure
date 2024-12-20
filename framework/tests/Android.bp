@@ -39,6 +39,7 @@ android_test {
     ],
     jarjar_rules: ":framework-configinfrastructure-jarjar",
     team: "trendy_team_android_core_experiments",
+    test_config: "AndroidCtsTest.xml",
 }
 
 android_test {
