@@ -28,15 +28,15 @@ import android.util.AndroidRuntimeException;
  * @hide
  */
 @SystemApi
-@FlaggedApi(Flags.FLAG_STAGE_FLAGS_FOR_BUILD)
-public class AconfigWriteException extends AndroidRuntimeException {
-    @FlaggedApi(Flags.FLAG_STAGE_FLAGS_FOR_BUILD)
-    public AconfigWriteException(@NonNull String message) {
+@FlaggedApi(Flags.FLAG_NEW_STORAGE_PUBLIC_API)
+public class AconfigStorageWriteException extends AndroidRuntimeException {
+    @FlaggedApi(Flags.FLAG_NEW_STORAGE_PUBLIC_API)
+    public AconfigStorageWriteException(@NonNull String message) {
         super(message);
     }
 
-    @FlaggedApi(Flags.FLAG_STAGE_FLAGS_FOR_BUILD)
-    public AconfigWriteException(@NonNull String message, @NonNull Throwable cause) {
+    @FlaggedApi(Flags.FLAG_NEW_STORAGE_PUBLIC_API)
+    public AconfigStorageWriteException(@NonNull String message, @NonNull Throwable cause) {
         super(message, cause);
     }
 }
