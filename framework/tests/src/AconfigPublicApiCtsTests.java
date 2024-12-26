@@ -67,4 +67,18 @@ public class AconfigPublicApiCtsTests {
                 AconfigStorageWriteException.class,
                 () -> flagManager.setBooleanLocalOverridesOnReboot(new HashMap()));
     }
+
+    @Test
+    @RequiresFlagsEnabled(Flags.FLAG_NEW_STORAGE_PUBLIC_API)
+    public void testAconfigStorageWriteException(){
+        // create new instance of AconfigStorageWriteException
+        AconfigStorageWriteException exception =
+            new AconfigStorageWriteException("test message");
+        assertEquals(exception.getMessage(), "test message");
+
+        Exception cause = new Exception("test cause");
+        exception = new AconfigStorageWriteException("test message", cause);
+        assertEquals(exception.getMessage(), "test message");
+        assertEquals(exception.getCause(), cause);
+    }
 }
