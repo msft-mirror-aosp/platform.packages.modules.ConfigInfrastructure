@@ -1892,6 +1892,7 @@ final class WritableFlags {
                 "window_manager/screen_record_enterprise_policies",
                 "window_manager/single_use_token",
                 "window_manager/splash_screen_exception_list",
+                "window_manager/system_exempt_from_activity_bg_start_restriction_enabled",
                 "wrong/nas_generate_replies"
             ));
 }
