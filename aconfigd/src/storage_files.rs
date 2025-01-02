@@ -738,6 +738,7 @@ impl StorageFiles {
     pub(crate) fn remove_local_override(
         &mut self,
         context: &PackageFlagContext,
+        immediate: bool,
     ) -> Result<(), AconfigdError> {
         let attribute = self.get_flag_attribute(context)?;
         if (attribute & FlagInfoBit::HasLocalOverride as u8) == 0 {
@@ -757,6 +758,20 @@ impl StorageFiles {
 
         let flag_info_file = self.get_persist_flag_info()?;
         Self::set_flag_has_local_override_to_file(flag_info_file, context, false)?;
+
+        if configinfra_framework_flags_rust::enable_immediate_clear_override_bugfix() && immediate {
+            let value = if (attribute & FlagInfoBit::HasServerOverride as u8) == 1 {
+                self.get_server_flag_value(&context)?
+            } else {
+                self.get_default_flag_value(&context)?
+            };
+
+            let mut mut_boot_flag_val = self.get_mutable_boot_flag_val()?;
+            Self::set_flag_value_to_file(&mut mut_boot_flag_val, &context, &value)?;
+
+            let mut mut_boot_flag_info = self.get_mutable_boot_flag_info()?;
+            Self::set_flag_has_local_override_to_file(&mut mut_boot_flag_info, &context, false)?;
+        }
 
         Ok(())
     }
@@ -1448,9 +1463,9 @@ mod tests {
             .get_package_flag_context("com.android.aconfig.storage.test_1", "enabled_rw")
             .unwrap();
 
-        assert!(storage_files.remove_local_override(&context).is_err());
+        assert!(storage_files.remove_local_override(&context, false).is_err());
         storage_files.stage_local_override(&context, "false").unwrap();
-        storage_files.remove_local_override(&context).unwrap();
+        storage_files.remove_local_override(&context, false).unwrap();
         assert_eq!(&storage_files.get_local_flag_value(&context).unwrap(), "");
         let attribute = storage_files.get_flag_attribute(&context).unwrap();
         assert!(attribute & (FlagInfoBit::HasLocalOverride as u8) == 0);

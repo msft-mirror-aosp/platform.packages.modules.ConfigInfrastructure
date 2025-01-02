@@ -19,7 +19,7 @@ use crate::utils::{get_files_digest, read_pb_from_file, remove_file, write_pb_to
 use crate::AconfigdError;
 use aconfigd_protos::{
     ProtoFlagOverride, ProtoFlagOverrideType, ProtoLocalFlagOverrides, ProtoOTAFlagStagingMessage,
-    ProtoPersistStorageRecord, ProtoPersistStorageRecords,
+    ProtoPersistStorageRecord, ProtoPersistStorageRecords, ProtoRemoveOverrideType,
 };
 use log::debug;
 use std::collections::HashMap;
@@ -153,7 +153,8 @@ impl StorageFilesManager {
         Ok(())
     }
 
-    /// add or update a container's storage files in the case of container update
+    /// add or update a container's storage files in the case of container
+    /// update
     pub(crate) fn add_or_update_container_storage_files(
         &mut self,
         container: &str,
@@ -349,6 +350,7 @@ impl StorageFilesManager {
         &mut self,
         package: &str,
         flag: &str,
+        remove_override_type: ProtoRemoveOverrideType,
     ) -> Result<(), AconfigdError> {
         let container = self
             .get_container(package)?
@@ -359,7 +361,8 @@ impl StorageFilesManager {
             .ok_or(AconfigdError::FailToGetStorageFiles { container: container.to_string() })?;
 
         let context = storage_files.get_package_flag_context(package, flag)?;
-        storage_files.remove_local_override(&context)
+        let immediate = remove_override_type == ProtoRemoveOverrideType::REMOVE_LOCAL_IMMEDIATE;
+        storage_files.remove_local_override(&context, immediate)
     }
 
     /// Remove all local overrides
@@ -1017,7 +1020,13 @@ mod tests {
         add_example_overrides(&mut manager);
         manager.apply_all_staged_overrides("mockup").unwrap();
 
-        manager.remove_local_override("com.android.aconfig.storage.test_1", "disabled_rw").unwrap();
+        manager
+            .remove_local_override(
+                "com.android.aconfig.storage.test_1",
+                "disabled_rw",
+                ProtoRemoveOverrideType::REMOVE_LOCAL_ON_REBOOT,
+            )
+            .unwrap();
 
         let flag =
             manager.get_flag_snapshot("com.android.aconfig.storage.test_1", "disabled_rw").unwrap();
