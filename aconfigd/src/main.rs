@@ -20,7 +20,6 @@
 
 use clap::Parser;
 use log::{error, info};
-use std::panic;
 
 mod aconfigd_commands;
 
@@ -43,6 +42,23 @@ enum Command {
 }
 
 fn main() {
+    if !aconfig_new_storage_flags::enable_aconfig_storage_daemon()
+        || !aconfig_new_storage_flags::enable_aconfigd_from_mainline()
+    {
+        info!("aconfigd_mainline is disabled, exiting");
+        std::process::exit(0);
+    }
+
+    // SAFETY: nobody has taken ownership of the inherited FDs yet.
+    // This needs to be called before logger initialization as logger setup will create a
+    // file descriptor.
+    unsafe {
+        if let Err(errmsg) = rustutils::inherited_fd::init_once() {
+            error!("failed to run init_once for inherited fds: {:?}.", errmsg);
+            std::process::exit(1);
+        }
+    };
+
     // setup android logger, direct to logcat
     android_logger::init_once(
         android_logger::Config::default()
@@ -51,14 +67,15 @@ fn main() {
     );
     info!("starting aconfigd_mainline commands.");
 
-    // redirect panic messages to logcat.
-    panic::set_hook(Box::new(|panic_info| {
-        error!("{}", panic_info);
-    }));
-
     let cli = Cli::parse();
     let command_return = match cli.command {
-        Command::StartSocket => aconfigd_commands::start_socket(),
+        Command::StartSocket => {
+            if cfg!(enable_mainline_aconfigd_socket) {
+                aconfigd_commands::start_socket()
+            } else {
+                Ok(())
+            }
+        }
         Command::Init => aconfigd_commands::init(),
         Command::BootstrapInit => aconfigd_commands::bootstrap_init(),
     };
