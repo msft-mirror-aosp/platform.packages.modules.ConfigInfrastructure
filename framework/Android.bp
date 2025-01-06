@@ -74,6 +74,7 @@ aconfig_declarations {
     srcs: [
         "flags.aconfig",
     ],
+    exportable: true,
 }
 
 java_aconfig_library {
