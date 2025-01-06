@@ -51,3 +51,13 @@ flag {
   bug: "364083026"
   is_exported: true
 }
+
+flag {
+  name: "enable_immediate_clear_override_bugfix"
+  namespace: "core_experiments_team_internal"
+  description: "Bugfix flag to allow clearing a local override immediately"
+  bug: "387316969"
+  metadata {
+    purpose: PURPOSE_BUGFIX
+  }
+}
