@@ -1383,6 +1383,7 @@ final class WritableFlags {
                 "location/android.location.flags.subscriptions_changed_listener_thread",
                 "location/android.location.flags.use_legacy_ntp_time",
                 "location/com.android.server.deviceidle.remove_idle_location",
+                "location/com.android.server.flags.datetime_notifications",
                 "location/com.android.settings.flags.datetime_feedback",
                 "location/enable_location_provider_manager_msl",
                 "location/ignore_settings_allowlist",
