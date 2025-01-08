@@ -16,6 +16,7 @@
 
 package android.os.flagging;
 
+import static android.aconfig.storage.TableUtils.StorageFilesBundle;
 import static android.provider.flags.Flags.FLAG_NEW_STORAGE_PUBLIC_API;
 import static android.provider.flags.Flags.readPlatformFromPlatformApi;
 
@@ -26,7 +27,6 @@ import android.aconfig.storage.PackageTable;
 import android.annotation.FlaggedApi;
 import android.annotation.NonNull;
 import android.os.Build;
-import android.os.StrictMode;
 import android.util.Log;
 
 import java.io.Closeable;
@@ -55,7 +55,6 @@ public class AconfigPackage {
     private static final String BOOT_PATH = "/metadata/aconfig/boot/";
     private static final String PMAP_FILE_EXT = ".package.map";
 
-    private static final Map<String, PackageTable> sPackageTableCache = new HashMap<>();
     private static final boolean READ_PLATFORM_FROM_PLATFORM_API =
             readPlatformFromPlatformApi() && Build.VERSION.SDK_INT > 35;
 
@@ -67,44 +66,36 @@ public class AconfigPackage {
 
     private PlatformAconfigPackage mPlatformAconfigPackage = null;
 
+    /** @hide */
+    static final Map<String, StorageFilesBundle> sStorageFilesCache = new HashMap<>();
+
     private AconfigPackage() {}
 
     static {
         File mapDir = new File(MAP_PATH);
         String[] mapFiles = mapDir.list();
         if (mapFiles != null) {
-            if (!READ_PLATFORM_FROM_PLATFORM_API) {
-                for (String file : mapFiles) {
-                    if (!file.endsWith(PMAP_FILE_EXT)) {
-                        continue;
-                    }
-                    try {
-                        PackageTable pTable =
-                                PackageTable.fromBytes(mapStorageFile(MAP_PATH + file));
-                        for (String packageName : pTable.getPackageList()) {
-                            sPackageTableCache.put(packageName, pTable);
-                        }
-                    } catch (Exception e) {
-                        // pass
-                        Log.w(TAG, e.toString());
-                    }
+            for (String file : mapFiles) {
+                if (!file.endsWith(PMAP_FILE_EXT)
+                        || (READ_PLATFORM_FROM_PLATFORM_API
+                                && PlatformAconfigPackage.PLATFORM_PACKAGE_MAP_FILES.contains(
+                                        file))) {
+                    continue;
                 }
-            } else {
-                for (String file : mapFiles) {
-                    if (!file.endsWith(PMAP_FILE_EXT)
-                            || PlatformAconfigPackage.PLATFORM_PACKAGE_MAP_FILES.contains(file)) {
-                        continue;
+                try {
+                    PackageTable pTable = PackageTable.fromBytes(mapStorageFile(MAP_PATH + file));
+                    String container = pTable.getHeader().getContainer();
+                    FlagTable fTable =
+                            FlagTable.fromBytes(mapStorageFile(MAP_PATH + container + ".flag.map"));
+                    FlagValueList fValueList =
+                            FlagValueList.fromBytes(mapStorageFile(BOOT_PATH + container + ".val"));
+                    StorageFilesBundle files = new StorageFilesBundle(pTable, fTable, fValueList);
+                    for (String packageName : pTable.getPackageList()) {
+                        sStorageFilesCache.put(packageName, files);
                     }
-                    try {
-                        PackageTable pTable =
-                                PackageTable.fromBytes(mapStorageFile(MAP_PATH + file));
-                        for (String packageName : pTable.getPackageList()) {
-                            sPackageTableCache.put(packageName, pTable);
-                        }
-                    } catch (Exception e) {
-                        // pass
-                        Log.w(TAG, e.toString());
-                    }
+                } catch (Exception e) {
+                    // pass
+                    Log.w(TAG, e.toString());
                 }
             }
         }
@@ -125,7 +116,6 @@ public class AconfigPackage {
      */
     @FlaggedApi(FLAG_NEW_STORAGE_PUBLIC_API)
     public static @NonNull AconfigPackage load(@NonNull String packageName) {
-        StrictMode.ThreadPolicy oldPolicy = StrictMode.allowThreadDiskReads();
         try {
             AconfigPackage aconfigPackage = new AconfigPackage();
 
@@ -136,18 +126,16 @@ public class AconfigPackage {
                 }
             }
 
-            PackageTable pTable = sPackageTableCache.get(packageName);
-            if (pTable == null) {
+            StorageFilesBundle files = sStorageFilesCache.get(packageName);
+            if (files == null) {
                 throw new AconfigStorageReadException(
                         AconfigStorageReadException.ERROR_PACKAGE_NOT_FOUND,
                         "package " + packageName + " cannot be found on the device");
             }
-            PackageTable.Node pNode = pTable.get(packageName);
-            String container = pTable.getHeader().getContainer();
-            aconfigPackage.mFlagTable =
-                    FlagTable.fromBytes(mapStorageFile(MAP_PATH + container + ".flag.map"));
-            aconfigPackage.mFlagValueList =
-                    FlagValueList.fromBytes(mapStorageFile(BOOT_PATH + container + ".val"));
+
+            PackageTable.Node pNode = files.packageTable.get(packageName);
+            aconfigPackage.mFlagTable = files.flagTable;
+            aconfigPackage.mFlagValueList = files.flagValueList;
             aconfigPackage.mPackageBooleanStartOffset = pNode.getBooleanStartIndex();
             aconfigPackage.mPackageId = pNode.getPackageId();
             return aconfigPackage;
@@ -159,8 +147,6 @@ public class AconfigPackage {
         } catch (Exception e) {
             throw new AconfigStorageReadException(
                     AconfigStorageReadException.ERROR_GENERIC, "Fail to create AconfigPackage", e);
-        } finally {
-            StrictMode.setThreadPolicy(oldPolicy);
         }
     }
 
