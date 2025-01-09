@@ -331,6 +331,7 @@ final class WritableFlags {
                 "credential_manager/enable_credential_description_api",
                 "credential_manager/enable_credential_manager",
                 "DeviceConfigBootstrapValues/processed_values",
+                "device_config_overrides/adservices:selinux_audit_domain",
                 "device_config_overrides/cts:android.cts.flags.tests.readwrite_enabled_flag",
                 "device_config_overrides/namespace1:key1",
                 "device_config_overrides/namespace3:key3",
