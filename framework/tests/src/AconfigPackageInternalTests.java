@@ -19,7 +19,7 @@ package android.os.flagging.test;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
 
-import android.aconfig.DeviceProtos;
+import android.aconfig.DeviceProtosTestUtil;
 import android.aconfig.nano.Aconfig;
 import android.aconfig.nano.Aconfig.parsed_flag;
 import android.aconfig.storage.AconfigStorageException;
@@ -42,7 +42,7 @@ import java.util.Map;
 public class AconfigPackageInternalTests {
     @Test
     public void testAconfigPackageInternal_load() throws IOException {
-        List<parsed_flag> flags = DeviceProtos.loadAndParseFlagProtos();
+        List<parsed_flag> flags = DeviceProtosTestUtil.loadAndParseFlagProtos();
         Map<String, AconfigPackageInternal> readerMap = new HashMap<>();
         StorageFileProvider fp = StorageFileProvider.getDefaultProvider();
 
@@ -67,7 +67,7 @@ public class AconfigPackageInternalTests {
 
             AconfigPackageInternal reader = readerMap.get(packageName);
             if (reader == null) {
-                reader = AconfigPackageInternal.load(container, packageName, fingerprint);
+                reader = AconfigPackageInternal.load(packageName, fingerprint);
                 readerMap.put(packageName, reader);
             }
             boolean jVal = reader.getBooleanFlagValue(fNode.getFlagIndex());
@@ -78,22 +78,15 @@ public class AconfigPackageInternalTests {
 
     @Test
     public void testAconfigPackageInternal_load_withError() throws IOException {
-        // container not found fake_container
+        // package not found
         AconfigStorageException e =
                 assertThrows(
                         AconfigStorageException.class,
-                        () -> AconfigPackageInternal.load("fake_container", "fake_package", 0));
-        assertEquals(AconfigStorageException.ERROR_CANNOT_READ_STORAGE_FILE, e.getErrorCode());
-
-        // package not found
-        e =
-                assertThrows(
-                        AconfigStorageException.class,
-                        () -> AconfigPackageInternal.load("system", "fake_container", 0));
+                        () -> AconfigPackageInternal.load("fake_package", 0));
         assertEquals(AconfigStorageException.ERROR_PACKAGE_NOT_FOUND, e.getErrorCode());
 
         // fingerprint doesn't match
-        List<parsed_flag> flags = DeviceProtos.loadAndParseFlagProtos();
+        List<parsed_flag> flags = DeviceProtosTestUtil.loadAndParseFlagProtos();
         StorageFileProvider fp = StorageFileProvider.getDefaultProvider();
 
         parsed_flag flag = flags.get(0);
@@ -108,9 +101,7 @@ public class AconfigPackageInternalTests {
             e =
                     assertThrows(
                             AconfigStorageException.class,
-                            () ->
-                                    AconfigPackageInternal.load(
-                                            container, packageName, fingerprint + 1));
+                            () -> AconfigPackageInternal.load(packageName, fingerprint + 1));
             assertEquals(AconfigStorageException.ERROR_FILE_FINGERPRINT_MISMATCH, e.getErrorCode());
         }
     }
