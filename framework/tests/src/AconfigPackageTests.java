@@ -17,9 +17,10 @@
 package android.os.flagging.test;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThrows;
 
-import android.aconfig.DeviceProtos;
+import android.aconfig.DeviceProtosTestUtil;
 import android.aconfig.nano.Aconfig;
 import android.aconfig.nano.Aconfig.parsed_flag;
 import android.aconfig.storage.FlagTable;
@@ -40,9 +41,23 @@ import java.util.Map;
 
 @RunWith(JUnit4.class)
 public class AconfigPackageTests {
+
+    @Test
+    public void testAconfigPackage_StorageFilesCache() throws IOException {
+        List<parsed_flag> flags = DeviceProtosTestUtil.loadAndParseFlagProtos();
+        for (parsed_flag flag : flags) {
+            if (flag.permission == Aconfig.READ_ONLY && flag.state == Aconfig.DISABLED) {
+                continue;
+            }
+            String container = flag.container;
+            String packageName = flag.package_;
+            assertNotNull(AconfigPackage.load(packageName));
+        }
+    }
+
     @Test
     public void testExternalAconfigPackageInstance() throws IOException {
-        List<parsed_flag> flags = DeviceProtos.loadAndParseFlagProtos();
+        List<parsed_flag> flags = DeviceProtosTestUtil.loadAndParseFlagProtos();
         Map<String, AconfigPackage> readerMap = new HashMap<>();
         StorageFileProvider fp = StorageFileProvider.getDefaultProvider();
 
