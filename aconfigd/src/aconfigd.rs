@@ -343,6 +343,7 @@ impl Aconfigd {
                 snapshot.set_is_readwrite(f.is_readwrite);
                 snapshot.set_has_server_override(f.has_server_override);
                 snapshot.set_has_local_override(f.has_local_override);
+                snapshot.set_has_boot_local_override(f.has_boot_local_override);
                 snapshot
             })
             .collect();
