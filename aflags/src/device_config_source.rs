@@ -130,6 +130,10 @@ impl FlagSource for DeviceConfigSource {
     fn override_flag(namespace: &str, qualified_name: &str, value: &str) -> Result<()> {
         read_device_config_output(&["put", namespace, qualified_name, value]).map(|_| ())
     }
+
+    fn unset_flag(_namespace: &str, _qualified_name: &str) -> Result<()> {
+        todo!()
+    }
 }
 
 #[cfg(test)]
