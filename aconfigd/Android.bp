@@ -23,6 +23,7 @@ rust_defaults {
         "libaconfigd_protos_rust",
         "libanyhow",
         "libclap",
+        "libconfiginfra_framework_flags_rust",
         "libmemmap2",
         "libopenssl",
         "liblog_rust",
@@ -83,4 +84,15 @@ rust_test {
         "./tests/data/container_with_more_flags.flag.info",
     ],
     require_root: true
+}
+
+rust_aconfig_library {
+    name: "libconfiginfra_framework_flags_rust",
+    crate_name: "configinfra_framework_flags_rust",
+    aconfig_declarations: "configinfra_framework_flags",
+    apex_available: [
+        "com.android.configinfrastructure",
+        "//apex_available:platform",
+    ],
+    min_sdk_version: "34",
 }
