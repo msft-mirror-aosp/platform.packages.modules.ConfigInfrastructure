@@ -127,6 +127,7 @@ impl Flag {
 trait FlagSource {
     fn list_flags() -> Result<Vec<Flag>>;
     fn override_flag(namespace: &str, qualified_name: &str, value: &str) -> Result<()>;
+    fn unset_flag(namespace: &str, qualified_name: &str) -> Result<()>;
 }
 
 enum FlagSourceType {
@@ -150,6 +151,7 @@ Rows in the table from the `list` command follow this format:
   * `provenance`: one of:
     + `default`: the flag value comes from its build-time default.
     + `server`: the flag value comes from a server override.
+    + `local`: the flag value comes from local override.
   * `permission`: read-write or read-only.
   * `container`: the container for the flag, configured in its definition.
 ";
@@ -170,17 +172,26 @@ enum Command {
         container: Option<String>,
     },
 
-    /// Enable an aconfig flag on this device, on the next boot.
+    /// Locally enable an aconfig flag on this device, on the next boot.
+    ///
+    /// Prevents server overrides until the value is unset.
     Enable {
         /// <package>.<flag_name>
         qualified_name: String,
     },
 
     /// Disable an aconfig flag on this device, on the next boot.
+    ///
+    /// Prevents server overrides until the value is unset.
     Disable {
         /// <package>.<flag_name>
         qualified_name: String,
     },
+
+    /// Re-allow server overrides for <package>.<flag_name>
+    ///
+    /// Requires a reboot to apply.
+    Unset { qualified_name: String },
 
     /// Display which flag storage backs aconfig flags.
     WhichBacking,
@@ -290,6 +301,15 @@ fn list(source_type: FlagSourceType, container: Option<String>) -> Result<String
     Ok(result)
 }
 
+fn unset(qualified_name: &str) -> Result<()> {
+    let flags_binding = AconfigStorageSource::list_flags()?;
+    let flag = flags_binding.iter().find(|f| f.qualified_name() == qualified_name).ok_or(
+        anyhow!("no aconfig flag '{qualified_name}'. Does the flag have an .aconfig definition?"),
+    )?;
+
+    AconfigStorageSource::unset_flag(&flag.namespace, qualified_name)
+}
+
 fn display_which_backing() -> String {
     if aconfig_flags::auto_generated::enable_only_new_storage() {
         "aconfig_storage".to_string()
@@ -314,6 +334,7 @@ fn main() -> Result<()> {
         }
         Command::Enable { qualified_name } => set_flag(&qualified_name, "true").map(|_| None),
         Command::Disable { qualified_name } => set_flag(&qualified_name, "false").map(|_| None),
+        Command::Unset { qualified_name } => unset(&qualified_name).map(|_| None),
         Command::WhichBacking => Ok(Some(display_which_backing())),
     };
     match output {
