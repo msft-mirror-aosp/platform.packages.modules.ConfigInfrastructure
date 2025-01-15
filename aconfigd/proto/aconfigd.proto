@@ -144,7 +144,8 @@ message StorageReturnMessage {
     optional bool has_server_override = 7;
     optional bool is_readwrite = 8;
     optional bool has_local_override = 9;
-    optional string container = 10;
+    optional bool has_boot_local_override = 10;
+    optional string container = 11;
   }
 
   message RemoveLocalOverrideReturnMessage {}
