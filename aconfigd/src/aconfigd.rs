@@ -53,6 +53,7 @@ impl Aconfigd {
         let boot_dir = self.root_dir.join("boot");
         let pb = read_pb_from_file::<ProtoPersistStorageRecords>(&self.persist_storage_records)?;
         for entry in pb.records.iter() {
+            debug!("remove boot storage files for container {}", entry.container());
             let boot_value_file = boot_dir.join(entry.container().to_owned() + ".val");
             let boot_info_file = boot_dir.join(entry.container().to_owned() + ".info");
             if boot_value_file.exists() {
@@ -80,6 +81,8 @@ impl Aconfigd {
     /// partitions
     pub fn initialize_platform_storage(&mut self) -> Result<(), AconfigdError> {
         for container in ["system", "product", "vendor"] {
+            debug!("start initialize {} flags", container);
+
             let aconfig_dir = PathBuf::from("/".to_string() + container + "/etc/aconfig");
             let default_package_map = aconfig_dir.join("package.map");
             let default_flag_map = aconfig_dir.join("flag.map");
@@ -167,6 +170,7 @@ impl Aconfigd {
 
         // initialize each container
         for container in dirs_to_visit.iter() {
+            debug!("start initialize {} flags", container);
             let etc_dir = apex_dir.join(container).join("etc");
             let default_package_map = etc_dir.join("package.map");
             let default_flag_map = etc_dir.join("flag.map");
