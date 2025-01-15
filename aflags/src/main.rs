@@ -126,8 +126,13 @@ impl Flag {
 
 trait FlagSource {
     fn list_flags() -> Result<Vec<Flag>>;
-    fn override_flag(namespace: &str, qualified_name: &str, value: &str) -> Result<()>;
-    fn unset_flag(namespace: &str, qualified_name: &str) -> Result<()>;
+    fn override_flag(
+        namespace: &str,
+        qualified_name: &str,
+        value: &str,
+        immediate: bool,
+    ) -> Result<()>;
+    fn unset_flag(namespace: &str, qualified_name: &str, immediate: bool) -> Result<()>;
 }
 
 enum FlagSourceType {
@@ -157,7 +162,7 @@ Rows in the table from the `list` command follow this format:
 ";
 
 #[derive(Parser, Debug)]
-#[clap(long_about=ABOUT_TEXT)]
+#[clap(long_about=ABOUT_TEXT, name="aflags")]
 struct Cli {
     #[clap(subcommand)]
     command: Command,
@@ -172,26 +177,45 @@ enum Command {
         container: Option<String>,
     },
 
-    /// Locally enable an aconfig flag on this device, on the next boot.
+    /// Locally enable an aconfig flag on this device.
     ///
     /// Prevents server overrides until the value is unset.
+    ///
+    /// By default, requires a reboot to take effect.
     Enable {
         /// <package>.<flag_name>
         qualified_name: String,
+
+        /// Apply the change immediately.
+        #[clap(short = 'i', long = "immediate")]
+        immediate: bool,
     },
 
-    /// Disable an aconfig flag on this device, on the next boot.
+    /// Locally disable an aconfig flag on this device, on the next boot.
     ///
     /// Prevents server overrides until the value is unset.
+    ///
+    /// By default, requires a reboot to take effect.
     Disable {
         /// <package>.<flag_name>
         qualified_name: String,
+
+        /// Apply the change immediately.
+        #[clap(short = 'i', long = "immediate")]
+        immediate: bool,
     },
 
-    /// Re-allow server overrides for <package>.<flag_name>
+    /// Clear any local override value and re-allow server overrides.
     ///
-    /// Requires a reboot to apply.
-    Unset { qualified_name: String },
+    /// By default, requires a reboot to take effect.
+    Unset {
+        /// <package>.<flag_name>
+        qualified_name: String,
+
+        /// Apply the change immediately.
+        #[clap(short = 'i', long = "immediate")]
+        immediate: bool,
+    },
 
     /// Display which flag storage backs aconfig flags.
     WhichBacking,
@@ -245,7 +269,7 @@ fn format_flag_row(flag: &Flag, info: &PaddingInfo) -> String {
     )
 }
 
-fn set_flag(qualified_name: &str, value: &str) -> Result<()> {
+fn set_flag(qualified_name: &str, value: &str, immediate: bool) -> Result<()> {
     let flags_binding = DeviceConfigSource::list_flags()?;
     let flag = flags_binding.iter().find(|f| f.qualified_name() == qualified_name).ok_or(
         anyhow!("no aconfig flag '{qualified_name}'. Does the flag have an .aconfig definition?"),
@@ -254,7 +278,7 @@ fn set_flag(qualified_name: &str, value: &str) -> Result<()> {
     ensure!(flag.permission == FlagPermission::ReadWrite,
             format!("could not write flag '{qualified_name}', it is read-only for the current release configuration."));
 
-    AconfigStorageSource::override_flag(&flag.namespace, qualified_name, value)?;
+    AconfigStorageSource::override_flag(&flag.namespace, qualified_name, value, immediate)?;
 
     Ok(())
 }
@@ -301,13 +325,13 @@ fn list(source_type: FlagSourceType, container: Option<String>) -> Result<String
     Ok(result)
 }
 
-fn unset(qualified_name: &str) -> Result<()> {
+fn unset(qualified_name: &str, immediate: bool) -> Result<()> {
     let flags_binding = AconfigStorageSource::list_flags()?;
     let flag = flags_binding.iter().find(|f| f.qualified_name() == qualified_name).ok_or(
         anyhow!("no aconfig flag '{qualified_name}'. Does the flag have an .aconfig definition?"),
     )?;
 
-    AconfigStorageSource::unset_flag(&flag.namespace, qualified_name)
+    AconfigStorageSource::unset_flag(&flag.namespace, qualified_name, immediate)
 }
 
 fn display_which_backing() -> String {
@@ -332,9 +356,15 @@ fn main() -> Result<()> {
                 list(FlagSourceType::DeviceConfig, container).map(Some)
             }
         }
-        Command::Enable { qualified_name } => set_flag(&qualified_name, "true").map(|_| None),
-        Command::Disable { qualified_name } => set_flag(&qualified_name, "false").map(|_| None),
-        Command::Unset { qualified_name } => unset(&qualified_name).map(|_| None),
+        Command::Enable { qualified_name, immediate } => {
+            set_flag(&qualified_name, "true", immediate).map(|_| None)
+        }
+        Command::Disable { qualified_name, immediate } => {
+            set_flag(&qualified_name, "false", immediate).map(|_| None)
+        }
+        Command::Unset { qualified_name, immediate } => {
+            unset(&qualified_name, immediate).map(|_| None)
+        }
         Command::WhichBacking => Ok(Some(display_which_backing())),
     };
     match output {

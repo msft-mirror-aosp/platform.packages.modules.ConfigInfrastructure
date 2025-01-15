@@ -168,7 +168,14 @@ fn send_override_command(
     package_name: &str,
     flag_name: &str,
     value: &str,
+    immediate: bool,
 ) -> Result<()> {
+    let override_type = if immediate {
+        ProtoFlagOverrideType::LOCAL_IMMEDIATE
+    } else {
+        ProtoFlagOverrideType::LOCAL_ON_REBOOT
+    };
+
     let messages = ProtoStorageRequestMessages {
         msgs: vec![ProtoStorageRequestMessage {
             msg: Some(ProtoStorageRequestMessageMsg::FlagOverrideMessage(
@@ -176,7 +183,7 @@ fn send_override_command(
                     package_name: Some(package_name.to_string()),
                     flag_name: Some(flag_name.to_string()),
                     flag_value: Some(value.to_string()),
-                    override_type: Some(ProtoFlagOverrideType::LOCAL_ON_REBOOT.into()),
+                    override_type: Some(override_type.into()),
                     special_fields: SpecialFields::new(),
                 },
             )),
@@ -209,21 +216,33 @@ impl FlagSource for AconfigStorageSource {
             .collect()
     }
 
-    fn override_flag(_namespace: &str, qualified_name: &str, value: &str) -> Result<()> {
+    fn override_flag(
+        _namespace: &str,
+        qualified_name: &str,
+        value: &str,
+        immediate: bool,
+    ) -> Result<()> {
         let (package, flag_name) = if let Some(last_dot_index) = qualified_name.rfind('.') {
             (&qualified_name[..last_dot_index], &qualified_name[last_dot_index + 1..])
         } else {
             return Err(anyhow!(format!("invalid flag name: {qualified_name}")));
         };
 
-        let _ = send_override_command(AconfigdSocket::System, package, flag_name, value);
-        let _ = send_override_command(AconfigdSocket::Mainline, package, flag_name, value);
+        let _ = send_override_command(AconfigdSocket::System, package, flag_name, value, immediate);
+        let _ =
+            send_override_command(AconfigdSocket::Mainline, package, flag_name, value, immediate);
         Ok(())
     }
 
-    fn unset_flag(_namespace: &str, qualified_name: &str) -> Result<()> {
+    fn unset_flag(_namespace: &str, qualified_name: &str, immediate: bool) -> Result<()> {
         let last_period_index = qualified_name.rfind('.').ok_or(anyhow!("No period found"))?;
         let (package, flag_name) = qualified_name.split_at(last_period_index);
+
+        let removal_type = if immediate {
+            ProtoRemoveOverrideType::REMOVE_LOCAL_IMMEDIATE
+        } else {
+            ProtoRemoveOverrideType::REMOVE_LOCAL_ON_REBOOT
+        };
 
         let socket_message = ProtoStorageRequestMessages {
             msgs: vec![ProtoStorageRequestMessage {
@@ -232,9 +251,7 @@ impl FlagSource for AconfigStorageSource {
                         package_name: Some(package.to_string()),
                         flag_name: Some(flag_name[1..].to_string()),
                         remove_all: Some(false),
-                        remove_override_type: Some(
-                            ProtoRemoveOverrideType::REMOVE_LOCAL_ON_REBOOT.into(),
-                        ),
+                        remove_override_type: Some(removal_type.into()),
                         special_fields: SpecialFields::new(),
                     },
                 )),
