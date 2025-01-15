@@ -19,9 +19,6 @@
 use anyhow::{anyhow, ensure, Result};
 use clap::Parser;
 
-mod device_config_source;
-use device_config_source::DeviceConfigSource;
-
 mod aconfig_storage_source;
 use aconfig_storage_source::AconfigStorageSource;
 
@@ -136,7 +133,6 @@ trait FlagSource {
 }
 
 enum FlagSourceType {
-    DeviceConfig,
     AconfigStorage,
 }
 
@@ -270,7 +266,7 @@ fn format_flag_row(flag: &Flag, info: &PaddingInfo) -> String {
 }
 
 fn set_flag(qualified_name: &str, value: &str, immediate: bool) -> Result<()> {
-    let flags_binding = DeviceConfigSource::list_flags()?;
+    let flags_binding = AconfigStorageSource::list_flags()?;
     let flag = flags_binding.iter().find(|f| f.qualified_name() == qualified_name).ok_or(
         anyhow!("no aconfig flag '{qualified_name}'. Does the flag have an .aconfig definition?"),
     )?;
@@ -285,7 +281,6 @@ fn set_flag(qualified_name: &str, value: &str, immediate: bool) -> Result<()> {
 
 fn list(source_type: FlagSourceType, container: Option<String>) -> Result<String> {
     let flags_unfiltered = match source_type {
-        FlagSourceType::DeviceConfig => DeviceConfigSource::list_flags()?,
         FlagSourceType::AconfigStorage => AconfigStorageSource::list_flags()?,
     };
 
@@ -347,15 +342,9 @@ fn main() -> Result<()> {
 
     let cli = Cli::parse();
     let output = match cli.command {
-        Command::List { container } => {
-            if aconfig_flags::auto_generated::enable_only_new_storage() {
-                list(FlagSourceType::AconfigStorage, container)
-                    .map_err(|err| anyhow!("could not list flags: {err}"))
-                    .map(Some)
-            } else {
-                list(FlagSourceType::DeviceConfig, container).map(Some)
-            }
-        }
+        Command::List { container } => list(FlagSourceType::AconfigStorage, container)
+            .map_err(|err| anyhow!("could not list flags: {err}"))
+            .map(Some),
         Command::Enable { qualified_name, immediate } => {
             set_flag(&qualified_name, "true", immediate).map(|_| None)
         }
