@@ -56,9 +56,7 @@ fn convert(msg: ProtoFlagQueryReturnMessage, containers: &HashMap<String, String
         ValuePickedFrom::Server
     };
 
-    let staged_value = if !msg.has_boot_local_override.unwrap_or(false)
-        && msg.has_local_override.unwrap_or(false)
-    {
+    let staged_value = if msg.has_local_override.unwrap_or(false) {
         // If a local override is staged, display it.
         if msg.boot_flag_value == msg.local_flag_value {
             None
@@ -68,14 +66,15 @@ fn convert(msg: ProtoFlagQueryReturnMessage, containers: &HashMap<String, String
             )?)
         }
     } else {
-        // Otherwise, see if there is a different server value staged.
-        if let Some(server_value) = msg.server_flag_value {
-            if server_value == msg.boot_flag_value.unwrap_or("".to_string()) || server_value == *""
-            {
-                None
-            } else {
-                Some(FlagValue::try_from(server_value.as_str())?)
-            }
+        // Otherwise, display if we're flipping to the default, or a server value.
+        let boot_value = msg.boot_flag_value.unwrap_or("".to_string());
+        let server_value = msg.server_flag_value.unwrap_or("".to_string());
+        let default_value = msg.default_flag_value.unwrap_or("".to_string());
+
+        if boot_value != server_value && server_value != *"" {
+            Some(FlagValue::try_from(server_value.as_str())?)
+        } else if msg.has_boot_local_override.unwrap_or(false) && boot_value != default_value {
+            Some(FlagValue::try_from(default_value.as_str())?)
         } else {
             None
         }
