@@ -3,9 +3,10 @@ use crate::{Flag, FlagSource};
 use crate::{FlagPermission, FlagValue, ValuePickedFrom};
 use aconfigd_protos::{
     ProtoFlagOverrideMessage, ProtoFlagOverrideType, ProtoFlagQueryReturnMessage,
-    ProtoListStorageMessage, ProtoListStorageMessageMsg, ProtoStorageRequestMessage,
-    ProtoStorageRequestMessageMsg, ProtoStorageRequestMessages, ProtoStorageReturnMessage,
-    ProtoStorageReturnMessageMsg, ProtoStorageReturnMessages,
+    ProtoListStorageMessage, ProtoListStorageMessageMsg, ProtoRemoveLocalOverrideMessage,
+    ProtoRemoveOverrideType, ProtoStorageRequestMessage, ProtoStorageRequestMessageMsg,
+    ProtoStorageRequestMessages, ProtoStorageReturnMessage, ProtoStorageReturnMessageMsg,
+    ProtoStorageReturnMessages,
 };
 use anyhow::anyhow;
 use anyhow::Result;
@@ -217,6 +218,34 @@ impl FlagSource for AconfigStorageSource {
 
         let _ = send_override_command(AconfigdSocket::System, package, flag_name, value);
         let _ = send_override_command(AconfigdSocket::Mainline, package, flag_name, value);
+        Ok(())
+    }
+
+    fn unset_flag(_namespace: &str, qualified_name: &str) -> Result<()> {
+        let last_period_index = qualified_name.rfind('.').ok_or(anyhow!("No period found"))?;
+        let (package, flag_name) = qualified_name.split_at(last_period_index);
+
+        let socket_message = ProtoStorageRequestMessages {
+            msgs: vec![ProtoStorageRequestMessage {
+                msg: Some(ProtoStorageRequestMessageMsg::RemoveLocalOverrideMessage(
+                    ProtoRemoveLocalOverrideMessage {
+                        package_name: Some(package.to_string()),
+                        flag_name: Some(flag_name[1..].to_string()),
+                        remove_all: Some(false),
+                        remove_override_type: Some(
+                            ProtoRemoveOverrideType::REMOVE_LOCAL_ON_REBOOT.into(),
+                        ),
+                        special_fields: SpecialFields::new(),
+                    },
+                )),
+                special_fields: SpecialFields::new(),
+            }],
+            special_fields: SpecialFields::new(),
+        };
+
+        let _ = write_socket_messages(AconfigdSocket::Mainline, socket_message.clone());
+        let _ = write_socket_messages(AconfigdSocket::System, socket_message);
+
         Ok(())
     }
 }
