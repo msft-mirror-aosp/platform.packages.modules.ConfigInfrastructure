@@ -158,7 +158,7 @@ Rows in the table from the `list` command follow this format:
 ";
 
 #[derive(Parser, Debug)]
-#[clap(long_about=ABOUT_TEXT, name="aflags")]
+#[clap(long_about=ABOUT_TEXT, bin_name="aflags")]
 struct Cli {
     #[clap(subcommand)]
     command: Command,
