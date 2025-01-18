@@ -60,6 +60,7 @@ impl StorageFilesManager {
             );
             return Ok(());
         }
+
         self.all_storage_files
             .insert(String::from(pb.container()), StorageFiles::from_pb(pb, &self.root_dir)?);
 
@@ -108,6 +109,7 @@ impl StorageFilesManager {
         default_flag_val: &Path,
         default_flag_info: &Path,
     ) -> Result<(), AconfigdError> {
+        debug!("update {} storage files", container);
         let mut storage_files = self
             .get_storage_files(container)
             .ok_or(AconfigdError::FailToGetStorageFiles { container: container.to_string() })?;
@@ -128,6 +130,7 @@ impl StorageFilesManager {
         )?;
 
         // restage server overrides
+        debug!("restaging existing server overrides");
         for f in server_overrides.iter() {
             let context = storage_files.get_package_flag_context(&f.package_name, &f.flag_name)?;
             if context.flag_exists {
@@ -136,6 +139,7 @@ impl StorageFilesManager {
         }
 
         // restage local overrides
+        debug!("restaging existing local overrides");
         let mut new_pb = ProtoLocalFlagOverrides::new();
         for f in local_overrides.into_iter() {
             let context =
@@ -176,6 +180,8 @@ impl StorageFilesManager {
                         default_flag_val,
                         default_flag_info,
                     )?;
+                } else {
+                    debug!("no need to update {}, computed digest matches with record", container);
                 }
             }
             None => {
@@ -206,6 +212,7 @@ impl StorageFilesManager {
 
     /// Reset all storage files
     pub(crate) fn reset_all_storage(&mut self) -> Result<(), AconfigdError> {
+        debug!("reset storage files of all containers");
         let all_containers = self.all_storage_files.keys().cloned().collect::<Vec<String>>();
         for container in all_containers {
             let storage_files = self
@@ -279,6 +286,7 @@ impl StorageFilesManager {
     fn get_ota_flags(&mut self) -> Result<Option<Vec<ProtoFlagOverride>>, AconfigdError> {
         let ota_pb_file = self.root_dir.join("flags/ota.pb");
         if !ota_pb_file.exists() {
+            debug!("no OTA flags staged, skip");
             return Ok(None);
         }
 
@@ -286,13 +294,19 @@ impl StorageFilesManager {
         if let Some(target_build_id) = ota_flags_pb.build_id {
             let device_build_id = rustutils::system_properties::read("ro.build.fingerprint")
                 .map_err(|errmsg| AconfigdError::FailToReadBuildFingerPrint { errmsg })?;
-            if device_build_id == Some(target_build_id) {
+            if device_build_id == Some(target_build_id.clone()) {
                 remove_file(&ota_pb_file)?;
                 Ok(Some(ota_flags_pb.overrides))
             } else {
+                debug!(
+                    "fingerprint mismatch between OTA flag staging {}, and device {}",
+                    target_build_id,
+                    device_build_id.unwrap_or(String::from("None")),
+                );
                 Ok(None)
             }
         } else {
+            debug!("ill formatted OTA staged flags, build fingerprint not set");
             remove_file(&ota_pb_file)?;
             return Ok(None);
         }
@@ -301,6 +315,7 @@ impl StorageFilesManager {
     /// Apply staged ota flags
     pub(crate) fn apply_staged_ota_flags(&mut self) -> Result<(), AconfigdError> {
         if let Some(flags) = self.get_ota_flags()? {
+            debug!("apply staged OTA flags");
             for flag in flags.iter() {
                 if let Err(errmsg) = self.override_flag_value(
                     flag.package_name(),
@@ -325,6 +340,7 @@ impl StorageFilesManager {
         &self,
         file: &Path,
     ) -> Result<(), AconfigdError> {
+        debug!("writing updated storage records {}", file.display().to_string());
         let mut pb = ProtoPersistStorageRecords::new();
         pb.records = self
             .all_storage_files
@@ -367,6 +383,7 @@ impl StorageFilesManager {
 
     /// Remove all local overrides
     pub(crate) fn remove_all_local_overrides(&mut self) -> Result<(), AconfigdError> {
+        debug!("remove all local overrides for all containers");
         for storage_files in self.all_storage_files.values_mut() {
             storage_files.remove_all_local_overrides()?;
         }
@@ -421,6 +438,7 @@ impl StorageFilesManager {
 
     /// List all the flags
     pub(crate) fn list_all_flags(&mut self) -> Result<Vec<FlagSnapshot>, AconfigdError> {
+        debug!("list all flags across containers");
         let mut flags = Vec::new();
         for storage_files in self.all_storage_files.values_mut() {
             match storage_files.list_all_flags() {
