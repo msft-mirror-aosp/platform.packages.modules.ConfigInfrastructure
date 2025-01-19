@@ -2,9 +2,11 @@ use crate::load_protos;
 use crate::{Flag, FlagSource};
 use crate::{FlagPermission, FlagValue, ValuePickedFrom};
 use aconfigd_protos::{
-    ProtoFlagQueryReturnMessage, ProtoListStorageMessage, ProtoListStorageMessageMsg,
-    ProtoStorageRequestMessage, ProtoStorageRequestMessageMsg, ProtoStorageRequestMessages,
-    ProtoStorageReturnMessage, ProtoStorageReturnMessageMsg, ProtoStorageReturnMessages,
+    ProtoFlagOverrideMessage, ProtoFlagOverrideType, ProtoFlagQueryReturnMessage,
+    ProtoListStorageMessage, ProtoListStorageMessageMsg, ProtoRemoveLocalOverrideMessage,
+    ProtoRemoveOverrideType, ProtoStorageRequestMessage, ProtoStorageRequestMessageMsg,
+    ProtoStorageRequestMessages, ProtoStorageReturnMessage, ProtoStorageReturnMessageMsg,
+    ProtoStorageReturnMessages,
 };
 use anyhow::anyhow;
 use anyhow::Result;
@@ -39,32 +41,43 @@ fn load_flag_to_container() -> Result<HashMap<String, String>> {
 }
 
 fn convert(msg: ProtoFlagQueryReturnMessage, containers: &HashMap<String, String>) -> Result<Flag> {
-    let (value, value_picked_from) = match (
-        &msg.boot_flag_value,
-        msg.default_flag_value,
-        msg.local_flag_value,
-        msg.has_local_override,
-    ) {
-        (_, _, Some(local), Some(has_local)) if has_local => {
-            (FlagValue::try_from(local.as_str())?, ValuePickedFrom::Local)
-        }
-        (Some(boot), Some(default), _, _) => {
-            let value = FlagValue::try_from(boot.as_str())?;
-            if *boot == default {
-                (value, ValuePickedFrom::Default)
-            } else {
-                (value, ValuePickedFrom::Server)
-            }
-        }
-        _ => return Err(anyhow!("missing override")),
+    let value = FlagValue::try_from(
+        msg.boot_flag_value
+            .clone()
+            .ok_or(anyhow!("no boot flag value for {:?}", msg.flag_name))?
+            .as_str(),
+    )?;
+
+    let value_picked_from = if msg.has_boot_local_override.unwrap_or(false) {
+        ValuePickedFrom::Local
+    } else if msg.boot_flag_value == msg.default_flag_value {
+        ValuePickedFrom::Default
+    } else {
+        ValuePickedFrom::Server
     };
 
-    let staged_value = match (msg.boot_flag_value, msg.server_flag_value, msg.has_server_override) {
-        (Some(boot), Some(server), _) if boot == server => None,
-        (Some(boot), Some(server), Some(has_server)) if boot != server && has_server => {
-            Some(FlagValue::try_from(server.as_str())?)
+    let staged_value = if msg.has_local_override.unwrap_or(false) {
+        // If a local override is staged, display it.
+        if msg.boot_flag_value == msg.local_flag_value {
+            None
+        } else {
+            Some(FlagValue::try_from(
+                msg.local_flag_value.ok_or(anyhow!("no local flag value"))?.as_str(),
+            )?)
         }
-        _ => None,
+    } else {
+        // Otherwise, display if we're flipping to the default, or a server value.
+        let boot_value = msg.boot_flag_value.unwrap_or("".to_string());
+        let server_value = msg.server_flag_value.unwrap_or("".to_string());
+        let default_value = msg.default_flag_value.unwrap_or("".to_string());
+
+        if boot_value != server_value && server_value != *"" {
+            Some(FlagValue::try_from(server_value.as_str())?)
+        } else if msg.has_boot_local_override.unwrap_or(false) && boot_value != default_value {
+            Some(FlagValue::try_from(default_value.as_str())?)
+        } else {
+            None
+        }
     };
 
     let permission = match msg.is_readwrite {
@@ -98,18 +111,10 @@ fn convert(msg: ProtoFlagQueryReturnMessage, containers: &HashMap<String, String
     })
 }
 
-fn read_from_socket(socket: AconfigdSocket) -> Result<Vec<ProtoFlagQueryReturnMessage>> {
-    let messages = ProtoStorageRequestMessages {
-        msgs: vec![ProtoStorageRequestMessage {
-            msg: Some(ProtoStorageRequestMessageMsg::ListStorageMessage(ProtoListStorageMessage {
-                msg: Some(ProtoListStorageMessageMsg::All(true)),
-                special_fields: SpecialFields::new(),
-            })),
-            special_fields: SpecialFields::new(),
-        }],
-        special_fields: SpecialFields::new(),
-    };
-
+fn write_socket_messages(
+    socket: AconfigdSocket,
+    messages: ProtoStorageRequestMessages,
+) -> Result<ProtoStorageReturnMessages> {
     let mut socket = UnixStream::connect(socket.name())?;
 
     let message_buffer = messages.write_to_bytes()?;
@@ -132,6 +137,22 @@ fn read_from_socket(socket: AconfigdSocket) -> Result<Vec<ProtoFlagQueryReturnMe
     let response: ProtoStorageReturnMessages =
         protobuf::Message::parse_from_bytes(&response_buffer)?;
 
+    Ok(response)
+}
+
+fn send_list_flags_command(socket: AconfigdSocket) -> Result<Vec<ProtoFlagQueryReturnMessage>> {
+    let messages = ProtoStorageRequestMessages {
+        msgs: vec![ProtoStorageRequestMessage {
+            msg: Some(ProtoStorageRequestMessageMsg::ListStorageMessage(ProtoListStorageMessage {
+                msg: Some(ProtoListStorageMessageMsg::All(true)),
+                special_fields: SpecialFields::new(),
+            })),
+            special_fields: SpecialFields::new(),
+        }],
+        special_fields: SpecialFields::new(),
+    };
+
+    let response = write_socket_messages(socket, messages)?;
     match response.msgs.as_slice() {
         [ProtoStorageReturnMessage {
             msg: Some(ProtoStorageReturnMessageMsg::ListStorageMessage(list_storage_message)),
@@ -141,11 +162,44 @@ fn read_from_socket(socket: AconfigdSocket) -> Result<Vec<ProtoFlagQueryReturnMe
     }
 }
 
+fn send_override_command(
+    socket: AconfigdSocket,
+    package_name: &str,
+    flag_name: &str,
+    value: &str,
+    immediate: bool,
+) -> Result<()> {
+    let override_type = if immediate {
+        ProtoFlagOverrideType::LOCAL_IMMEDIATE
+    } else {
+        ProtoFlagOverrideType::LOCAL_ON_REBOOT
+    };
+
+    let messages = ProtoStorageRequestMessages {
+        msgs: vec![ProtoStorageRequestMessage {
+            msg: Some(ProtoStorageRequestMessageMsg::FlagOverrideMessage(
+                ProtoFlagOverrideMessage {
+                    package_name: Some(package_name.to_string()),
+                    flag_name: Some(flag_name.to_string()),
+                    flag_value: Some(value.to_string()),
+                    override_type: Some(override_type.into()),
+                    special_fields: SpecialFields::new(),
+                },
+            )),
+            special_fields: SpecialFields::new(),
+        }],
+        special_fields: SpecialFields::new(),
+    };
+
+    write_socket_messages(socket, messages)?;
+    Ok(())
+}
+
 impl FlagSource for AconfigStorageSource {
     fn list_flags() -> Result<Vec<Flag>> {
         let containers = load_flag_to_container()?;
-        let system_messages = read_from_socket(AconfigdSocket::System);
-        let mainline_messages = read_from_socket(AconfigdSocket::Mainline);
+        let system_messages = send_list_flags_command(AconfigdSocket::System);
+        let mainline_messages = send_list_flags_command(AconfigdSocket::Mainline);
 
         let mut all_messages = vec![];
         if let Ok(system_messages) = system_messages {
@@ -161,7 +215,53 @@ impl FlagSource for AconfigStorageSource {
             .collect()
     }
 
-    fn override_flag(_namespace: &str, _qualified_name: &str, _value: &str) -> Result<()> {
-        todo!()
+    fn override_flag(
+        _namespace: &str,
+        qualified_name: &str,
+        value: &str,
+        immediate: bool,
+    ) -> Result<()> {
+        let (package, flag_name) = if let Some(last_dot_index) = qualified_name.rfind('.') {
+            (&qualified_name[..last_dot_index], &qualified_name[last_dot_index + 1..])
+        } else {
+            return Err(anyhow!(format!("invalid flag name: {qualified_name}")));
+        };
+
+        let _ = send_override_command(AconfigdSocket::System, package, flag_name, value, immediate);
+        let _ =
+            send_override_command(AconfigdSocket::Mainline, package, flag_name, value, immediate);
+        Ok(())
+    }
+
+    fn unset_flag(_namespace: &str, qualified_name: &str, immediate: bool) -> Result<()> {
+        let last_period_index = qualified_name.rfind('.').ok_or(anyhow!("No period found"))?;
+        let (package, flag_name) = qualified_name.split_at(last_period_index);
+
+        let removal_type = if immediate {
+            ProtoRemoveOverrideType::REMOVE_LOCAL_IMMEDIATE
+        } else {
+            ProtoRemoveOverrideType::REMOVE_LOCAL_ON_REBOOT
+        };
+
+        let socket_message = ProtoStorageRequestMessages {
+            msgs: vec![ProtoStorageRequestMessage {
+                msg: Some(ProtoStorageRequestMessageMsg::RemoveLocalOverrideMessage(
+                    ProtoRemoveLocalOverrideMessage {
+                        package_name: Some(package.to_string()),
+                        flag_name: Some(flag_name[1..].to_string()),
+                        remove_all: Some(false),
+                        remove_override_type: Some(removal_type.into()),
+                        special_fields: SpecialFields::new(),
+                    },
+                )),
+                special_fields: SpecialFields::new(),
+            }],
+            special_fields: SpecialFields::new(),
+        };
+
+        let _ = write_socket_messages(AconfigdSocket::Mainline, socket_message.clone());
+        let _ = write_socket_messages(AconfigdSocket::System, socket_message);
+
+        Ok(())
     }
 }

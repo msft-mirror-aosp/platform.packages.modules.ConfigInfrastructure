@@ -118,6 +118,7 @@ pub(crate) struct FlagSnapshot {
     pub is_readwrite: bool,
     pub has_server_override: bool,
     pub has_local_override: bool,
+    pub has_boot_local_override: bool,
 }
 
 impl StorageFiles {
@@ -738,6 +739,7 @@ impl StorageFiles {
     pub(crate) fn remove_local_override(
         &mut self,
         context: &PackageFlagContext,
+        immediate: bool,
     ) -> Result<(), AconfigdError> {
         let attribute = self.get_flag_attribute(context)?;
         if (attribute & FlagInfoBit::HasLocalOverride as u8) == 0 {
@@ -757,6 +759,20 @@ impl StorageFiles {
 
         let flag_info_file = self.get_persist_flag_info()?;
         Self::set_flag_has_local_override_to_file(flag_info_file, context, false)?;
+
+        if configinfra_framework_flags_rust::enable_immediate_clear_override_bugfix() && immediate {
+            let value = if (attribute & FlagInfoBit::HasServerOverride as u8) == 1 {
+                self.get_server_flag_value(&context)?
+            } else {
+                self.get_default_flag_value(&context)?
+            };
+
+            let mut mut_boot_flag_val = self.get_mutable_boot_flag_val()?;
+            Self::set_flag_value_to_file(&mut mut_boot_flag_val, &context, &value)?;
+
+            let mut mut_boot_flag_info = self.get_mutable_boot_flag_info()?;
+            Self::set_flag_has_local_override_to_file(&mut mut_boot_flag_info, &context, false)?;
+        }
 
         Ok(())
     }
@@ -824,6 +840,7 @@ impl StorageFiles {
             is_readwrite: attribute & FlagInfoBit::IsReadWrite as u8 != 0,
             has_server_override: attribute & FlagInfoBit::HasServerOverride as u8 != 0,
             has_local_override: attribute & FlagInfoBit::HasLocalOverride as u8 != 0,
+            has_boot_local_override: false, // This is unsupported for get_flag_snapshot.
         }))
     }
 
@@ -859,6 +876,7 @@ impl StorageFiles {
             is_readwrite: f.is_readwrite,
             has_server_override: f.has_server_override,
             has_local_override: f.has_local_override,
+            has_boot_local_override: false, // Placeholder; this is mutated and set below.
         })
         .collect();
 
@@ -867,10 +885,11 @@ impl StorageFiles {
             flag_index.insert(f.package.clone() + "/" + &f.flag, i);
         }
 
-        let mut flags: Vec<_> = list_flags(
+        let mut flags: Vec<_> = list_flags_with_info(
             &self.storage_record.persist_package_map.display().to_string(),
             &self.storage_record.persist_flag_map.display().to_string(),
             &self.storage_record.boot_flag_val.display().to_string(),
+            &self.storage_record.boot_flag_info.display().to_string(),
         )
         .map_err(|errmsg| AconfigdError::FailToListFlags {
             container: self.storage_record.container.clone(),
@@ -889,9 +908,10 @@ impl StorageFiles {
                     &f.flag_name,
                 )))?;
             snapshots[*index].boot_value = f.flag_value.clone();
+            snapshots[*index].has_boot_local_override = f.has_local_override;
         }
 
-        flags = list_flags(
+        let flags: Vec<_> = list_flags(
             &self.storage_record.persist_package_map.display().to_string(),
             &self.storage_record.persist_flag_map.display().to_string(),
             &self.storage_record.default_flag_val.display().to_string(),
@@ -952,6 +972,7 @@ impl StorageFiles {
             is_readwrite: f.is_readwrite,
             has_server_override: f.has_server_override,
             has_local_override: f.has_local_override,
+            has_boot_local_override: false, // Placeholder value; this is mutated and set below.
         })
         .collect();
 
@@ -960,10 +981,11 @@ impl StorageFiles {
             flag_index.insert(f.package.clone() + "/" + &f.flag, i);
         }
 
-        let mut flags: Vec<_> = list_flags(
+        let mut flags: Vec<_> = list_flags_with_info(
             &self.storage_record.persist_package_map.display().to_string(),
             &self.storage_record.persist_flag_map.display().to_string(),
             &self.storage_record.boot_flag_val.display().to_string(),
+            &self.storage_record.boot_flag_info.display().to_string(),
         )
         .map_err(|errmsg| AconfigdError::FailToListFlags {
             container: self.storage_record.container.clone(),
@@ -981,9 +1003,10 @@ impl StorageFiles {
                     &f.flag_name,
                 )))?;
             snapshots[*index].boot_value = f.flag_value.clone();
+            snapshots[*index].has_boot_local_override = f.has_local_override;
         }
 
-        flags = list_flags(
+        let flags: Vec<_> = list_flags(
             &self.storage_record.persist_package_map.display().to_string(),
             &self.storage_record.persist_flag_map.display().to_string(),
             &self.storage_record.default_flag_val.display().to_string(),
@@ -1448,9 +1471,9 @@ mod tests {
             .get_package_flag_context("com.android.aconfig.storage.test_1", "enabled_rw")
             .unwrap();
 
-        assert!(storage_files.remove_local_override(&context).is_err());
+        assert!(storage_files.remove_local_override(&context, false).is_err());
         storage_files.stage_local_override(&context, "false").unwrap();
-        storage_files.remove_local_override(&context).unwrap();
+        storage_files.remove_local_override(&context, false).unwrap();
         assert_eq!(&storage_files.get_local_flag_value(&context).unwrap(), "");
         let attribute = storage_files.get_flag_attribute(&context).unwrap();
         assert!(attribute & (FlagInfoBit::HasLocalOverride as u8) == 0);
@@ -1552,6 +1575,7 @@ mod tests {
             is_readwrite: true,
             has_server_override: true,
             has_local_override: true,
+            has_boot_local_override: false,
         };
 
         assert_eq!(flag, Some(expected_flag));
@@ -1588,6 +1612,7 @@ mod tests {
             is_readwrite: true,
             has_server_override: true,
             has_local_override: true,
+            has_boot_local_override: false,
         };
         assert_eq!(flags[0], flag);
 
@@ -1602,6 +1627,7 @@ mod tests {
             is_readwrite: false,
             has_server_override: false,
             has_local_override: false,
+            has_boot_local_override: false,
         };
         assert_eq!(flags[1], flag);
 
@@ -1616,6 +1642,7 @@ mod tests {
             is_readwrite: true,
             has_server_override: true,
             has_local_override: false,
+            has_boot_local_override: false,
         };
         assert_eq!(flags[2], flag);
     }
@@ -1651,6 +1678,7 @@ mod tests {
             is_readwrite: true,
             has_server_override: true,
             has_local_override: false,
+            has_boot_local_override: false,
         };
         assert_eq!(flags[2], flag);
 
@@ -1665,6 +1693,7 @@ mod tests {
             is_readwrite: true,
             has_server_override: true,
             has_local_override: true,
+            has_boot_local_override: false,
         };
         assert_eq!(flags[3], flag);
     }

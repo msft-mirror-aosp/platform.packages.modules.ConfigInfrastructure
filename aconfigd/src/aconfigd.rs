@@ -29,7 +29,8 @@ use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 
-// Aconfigd that is capable of doing both one shot storage file init and socket service
+// Aconfigd that is capable of doing both one shot storage file init and socket
+// service
 #[derive(Debug)]
 pub struct Aconfigd {
     pub root_dir: PathBuf,
@@ -74,8 +75,9 @@ impl Aconfigd {
         Ok(())
     }
 
-    /// Initialize platform storage files, create or update existing persist storage files and
-    /// create new boot storage files for each platform partitions
+    /// Initialize platform storage files, create or update existing persist
+    /// storage files and create new boot storage files for each platform
+    /// partitions
     pub fn initialize_platform_storage(&mut self) -> Result<(), AconfigdError> {
         for container in ["system", "product", "vendor"] {
             let aconfig_dir = PathBuf::from("/".to_string() + container + "/etc/aconfig");
@@ -126,8 +128,9 @@ impl Aconfigd {
         Ok(())
     }
 
-    /// Initialize mainline storage files, create or update existing persist storage files and
-    /// create new boot storage files for each mainline container
+    /// Initialize mainline storage files, create or update existing persist
+    /// storage files and create new boot storage files for each mainline
+    /// container
     pub fn initialize_mainline_storage(&mut self) -> Result<(), AconfigdError> {
         // get all the apex dirs to visit
         let mut dirs_to_visit = Vec::new();
@@ -294,8 +297,11 @@ impl Aconfigd {
         if request_pb.remove_all() {
             self.storage_manager.remove_all_local_overrides()?;
         } else {
-            self.storage_manager
-                .remove_local_override(request_pb.package_name(), request_pb.flag_name())?;
+            self.storage_manager.remove_local_override(
+                request_pb.package_name(),
+                request_pb.flag_name(),
+                request_pb.remove_override_type(),
+            )?;
         }
         let mut return_pb = ProtoStorageReturnMessage::new();
         return_pb.mut_remove_local_override_message();
@@ -343,6 +349,7 @@ impl Aconfigd {
                 snapshot.set_is_readwrite(f.is_readwrite);
                 snapshot.set_has_server_override(f.has_server_override);
                 snapshot.set_has_local_override(f.has_local_override);
+                snapshot.set_has_boot_local_override(f.has_boot_local_override);
                 snapshot
             })
             .collect();
