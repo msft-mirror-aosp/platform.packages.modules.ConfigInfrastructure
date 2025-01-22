@@ -61,3 +61,11 @@ flag {
     purpose: PURPOSE_BUGFIX
   }
 }
+
+flag {
+  name: "mmd_device_config"
+  namespace: "core_experiments_team_internal"
+  description: "Enable device config usages for mmd"
+  bug: "375431994"
+  is_exported: true
+}
