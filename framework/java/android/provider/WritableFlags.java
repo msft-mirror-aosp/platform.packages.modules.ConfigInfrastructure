@@ -243,6 +243,7 @@ final class WritableFlags {
                 "autofill/pcc_use_fallback",
                 "autofill/portrait_body_height_max_percent",
                 "autofill/prefer_provider_over_pcc",
+                "autofill/session_fill_event_history",
                 "autofill/should_enable_autofill_on_all_view_types",
                 "autofill/smart_suggestion_supported_modes",
                 "autofill/trigger_fill_request_on_filtered_important_views",
