@@ -187,7 +187,7 @@ enum Command {
         immediate: bool,
     },
 
-    /// Locally disable an aconfig flag on this device, on the next boot.
+    /// Locally disable an aconfig flag on this device.
     ///
     /// Prevents server overrides until the value is unset.
     ///
