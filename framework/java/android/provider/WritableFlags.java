@@ -1394,6 +1394,7 @@ final class WritableFlags {
                 "media_tv/android.media.tv.flags.enable_ad_service_fw",
                 "media_tv/android.media.tv.flags.tiaf_v_apis",
                 "media/media_metrics_mode",
+                "media/media_session_temp_user_engaged_duration_ms",
                 "media/player_metrics_app_allowlist",
                 "media/player_metrics_app_blocklist",
                 "media/player_metrics_per_app_attribution_allowlist",
