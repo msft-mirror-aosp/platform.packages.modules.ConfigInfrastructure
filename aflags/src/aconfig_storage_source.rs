@@ -36,10 +36,6 @@ impl AconfigdSocket {
     }
 }
 
-fn load_flag_to_container() -> Result<HashMap<String, String>> {
-    Ok(load_protos::load()?.into_iter().map(|p| (p.qualified_name(), p.container)).collect())
-}
-
 fn convert(msg: ProtoFlagQueryReturnMessage, containers: &HashMap<String, String>) -> Result<Flag> {
     let value = FlagValue::try_from(
         msg.boot_flag_value
@@ -197,7 +193,7 @@ fn send_override_command(
 
 impl FlagSource for AconfigStorageSource {
     fn list_flags() -> Result<Vec<Flag>> {
-        let containers = load_flag_to_container()?;
+        let flag_defaults = load_protos::load()?;
         let system_messages = send_list_flags_command(AconfigdSocket::System);
         let mainline_messages = send_list_flags_command(AconfigdSocket::Mainline);
 
@@ -209,10 +205,29 @@ impl FlagSource for AconfigStorageSource {
             all_messages.extend_from_slice(&mainline_messages);
         }
 
-        all_messages
+        let container_map: HashMap<String, String> = flag_defaults
+            .clone()
             .into_iter()
-            .map(|query_message| convert(query_message.clone(), &containers))
-            .collect()
+            .map(|default| (default.qualified_name(), default.container))
+            .collect();
+        let socket_flags: Vec<Result<Flag>> = all_messages
+            .into_iter()
+            .map(|query_message| convert(query_message.clone(), &container_map))
+            .collect();
+        let socket_flags: Result<Vec<Flag>> = socket_flags.into_iter().collect();
+
+        // Load the defaults from the on-device protos.
+        // If the sockets are unavailable, just display the proto defaults.
+        let mut flags = flag_defaults.clone();
+        let name_to_socket_flag: HashMap<String, Flag> =
+            socket_flags?.into_iter().map(|p| (p.qualified_name(), p)).collect();
+        flags.iter_mut().for_each(|flag| {
+            if let Some(socket_flag) = name_to_socket_flag.get(&flag.qualified_name()) {
+                *flag = socket_flag.clone();
+            }
+        });
+
+        Ok(flags)
     }
 
     fn override_flag(
