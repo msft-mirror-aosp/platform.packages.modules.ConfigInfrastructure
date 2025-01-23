@@ -212,9 +212,6 @@ enum Command {
         #[clap(short = 'i', long = "immediate")]
         immediate: bool,
     },
-
-    /// Display which flag storage backs aconfig flags.
-    WhichBacking,
 }
 
 struct PaddingInfo {
@@ -329,14 +326,6 @@ fn unset(qualified_name: &str, immediate: bool) -> Result<()> {
     AconfigStorageSource::unset_flag(&flag.namespace, qualified_name, immediate)
 }
 
-fn display_which_backing() -> String {
-    if aconfig_flags::auto_generated::enable_only_new_storage() {
-        "aconfig_storage".to_string()
-    } else {
-        "device_config".to_string()
-    }
-}
-
 fn main() -> Result<()> {
     ensure!(nix::unistd::Uid::current().is_root(), "must be root");
 
@@ -354,7 +343,6 @@ fn main() -> Result<()> {
         Command::Unset { qualified_name, immediate } => {
             unset(&qualified_name, immediate).map(|_| None)
         }
-        Command::WhichBacking => Ok(Some(display_which_backing())),
     };
     match output {
         Ok(Some(text)) => println!("{text}"),
