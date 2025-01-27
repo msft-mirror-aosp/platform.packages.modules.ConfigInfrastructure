@@ -38,6 +38,7 @@ final class WritableNamespaces {
             new ArraySet<String>(Arrays.asList(
                     "adservices",
                     "autofill",
+                    "app_compat_overrides",
                     "captive_portal_login",
                     "connectivity",
                     "exo",
