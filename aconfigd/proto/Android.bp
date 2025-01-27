@@ -84,12 +84,26 @@ java_library {
     proto: {
         type: "stream",
     },
-    sdk_version: "current",
+    sdk_version: "core_current",
     min_sdk_version: "UpsideDownCake",
     apex_available: [
         "//apex_available:anyapex",
         "//apex_available:platform",
     ],
+}
+
+java_library {
+    name: "aconfigd_java_proto_lib_repackaged",
+    sdk_version: "core_current",
+    static_libs: [
+        "aconfigd_java_proto_lib",
+    ],
+    min_sdk_version: "UpsideDownCake",
+    apex_available: [
+        "//apex_available:anyapex",
+        "//apex_available:platform",
+    ],
+    jarjar_rules: "repackage-aconfigd-proto-stream.txt",
 }
 
 java_library {

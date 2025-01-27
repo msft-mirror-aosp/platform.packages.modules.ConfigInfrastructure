@@ -25,6 +25,7 @@ import android.annotation.NonNull;
 import android.annotation.SystemApi;
 import android.net.LocalSocket;
 import android.net.LocalSocketAddress;
+import android.os.flagging.AconfigdProtoStreamer;
 import android.provider.flags.Flags;
 import android.util.AndroidRuntimeException;
 import android.util.Log;
@@ -88,6 +89,14 @@ public final class StageOtaFlags {
             @NonNull Map<String, Boolean> flags, @NonNull String buildId) {
         int flagCount = flags.size();
         Log.d(LOG_TAG, "stageFlagsForBuild invoked for " + flagCount + " flags");
+        if (Flags.useProtoInputStream()) {
+            try {
+                (new AconfigdProtoStreamer()).sendOtaFlagOverrideRequests(flags, buildId);
+            } catch (IOException e) {
+                throw new AndroidRuntimeException(e);
+            }
+            return STATUS_STAGE_SUCCESS;
+        }
 
         try {
             LocalSocket socket = new LocalSocket();
