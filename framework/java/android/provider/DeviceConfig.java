@@ -1578,17 +1578,13 @@ public final class DeviceConfig {
         }
     }
 
-    // TODO(b/364399200): should provide a getOnPropertiesChangedListeners() methods instead and let
-    // caller implement dump() instead
-
     // NOTE: this API is only used by the framework code, but using MODULE_LIBRARIES causes a
     // build-time error on CtsDeviceConfigTestCases, so it's using PRIVILEGED_APPS.
     /**
      * Dumps internal state into the given {@code fd} or {@code printWriter}.
      *
-     * <p><b>Note:</b> Currently the only supported argument is
-     * {@link DeviceConfig#DUMP_ARG_NAMESPACE}, which will filter the output using a substring of
-     * the next argument. But other arguments might be
+     * <p><b>Note:</b> Currently the only supported argument is {@link #DUMP_ARG_NAMESPACE} which
+     * will filter the output using a substring of the next argument. But other arguments might be
      * dynamically added in the future, without documentation - this method is meant only for
      * debugging purposes, and should not be used as a formal API.
      *
