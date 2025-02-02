@@ -448,6 +448,15 @@ public final class DeviceConfig {
     public static final String NAMESPACE_MGLRU_NATIVE = "mglru_native";
 
     /**
+     * Namespace for all memory management related features.
+     *
+     * @hide
+     */
+    @SystemApi
+    @FlaggedApi(Flags.FLAG_MMD_DEVICE_CONFIG)
+    public static final String NAMESPACE_MM = "mm";
+
+    /**
      * Namespace for all mmd native related features.
      *
      * @hide
