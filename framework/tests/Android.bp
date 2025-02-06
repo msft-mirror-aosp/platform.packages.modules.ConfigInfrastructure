@@ -49,7 +49,7 @@ android_test {
         "src/AconfigPackageTests.java",
     ],
     static_libs: [
-        "aconfig_device_paths_java",
+        "aconfig_device_paths_java_util",
         "androidx.test.rules",
         "aconfig_storage_file_java",
         "junit",

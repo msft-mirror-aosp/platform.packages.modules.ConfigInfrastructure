@@ -32,13 +32,14 @@
 mod auto_generated {
     pub use aconfigd_rust_proto::aconfigd::storage_request_message::list_storage_message::Msg as ProtoListStorageMessageMsg;
     pub use aconfigd_rust_proto::aconfigd::storage_request_message::FlagOverrideMessage as ProtoFlagOverrideMessage;
-    pub use aconfigd_rust_proto::aconfigd::storage_request_message::OTAFlagStagingMessage as ProtoOTAFlagStagingMessage;
-    pub use aconfigd_rust_proto::aconfigd::storage_request_message::NewStorageMessage as ProtoNewStorageMessage;
-    pub use aconfigd_rust_proto::aconfigd::storage_request_message::FlagQueryMessage as ProtoFlagQueryMessage;
-    pub use aconfigd_rust_proto::aconfigd::storage_request_message::RemoveLocalOverrideMessage as ProtoRemoveLocalOverrideMessage;
     pub use aconfigd_rust_proto::aconfigd::storage_request_message::FlagOverrideType as ProtoFlagOverrideType;
+    pub use aconfigd_rust_proto::aconfigd::storage_request_message::FlagQueryMessage as ProtoFlagQueryMessage;
     pub use aconfigd_rust_proto::aconfigd::storage_request_message::ListStorageMessage as ProtoListStorageMessage;
     pub use aconfigd_rust_proto::aconfigd::storage_request_message::Msg as ProtoStorageRequestMessageMsg;
+    pub use aconfigd_rust_proto::aconfigd::storage_request_message::NewStorageMessage as ProtoNewStorageMessage;
+    pub use aconfigd_rust_proto::aconfigd::storage_request_message::OTAFlagStagingMessage as ProtoOTAFlagStagingMessage;
+    pub use aconfigd_rust_proto::aconfigd::storage_request_message::RemoveLocalOverrideMessage as ProtoRemoveLocalOverrideMessage;
+    pub use aconfigd_rust_proto::aconfigd::storage_request_message::RemoveOverrideType as ProtoRemoveOverrideType;
     pub use aconfigd_rust_proto::aconfigd::storage_return_message::FlagQueryReturnMessage as ProtoFlagQueryReturnMessage;
     pub use aconfigd_rust_proto::aconfigd::storage_return_message::ListStorageReturnMessage as ProtoListStorageReturnMessage;
     pub use aconfigd_rust_proto::aconfigd::storage_return_message::Msg as ProtoStorageReturnMessageMsg;
@@ -55,19 +56,20 @@ mod auto_generated {
 // ---- When building with cargo ----
 #[cfg(feature = "cargo")]
 mod auto_generated {
-    // include! statements should be avoided (because they import file contents verbatim), but
-    // because this is only used during local development, and only if using cargo instead of the
-    // Android tool-chain, we allow it
+    // include! statements should be avoided (because they import file contents
+    // verbatim), but because this is only used during local development, and
+    // only if using cargo instead of the Android tool-chain, we allow it
     include!(concat!(env!("OUT_DIR"), "/aconfigd_proto/mod.rs"));
     pub use aconfigd::storage_request_message::list_storage_message::Msg as ProtoListStorageMessageMsg;
     pub use aconfigd::storage_request_message::FlagOverrideMessage as ProtoFlagOverrideMessage;
-    pub use aconfigd::storage_request_message::OTAFlagStagingMessage as ProtoOTAFlagStagingMessage;
-    pub use aconfigd::storage_request_message::NewStorageMessage as ProtoNewStorageMessage;
-    pub use aconfigd::storage_request_message::FlagQueryMessage as ProtoFlagQueryMessage;
-    pub use aconfigd::storage_request_message::RemoveLocalOverrideMessage as ProtoRemoveLocalOverrideMessage;
     pub use aconfigd::storage_request_message::FlagOverrideType as ProtoFlagOverrideType;
+    pub use aconfigd::storage_request_message::FlagQueryMessage as ProtoFlagQueryMessage;
     pub use aconfigd::storage_request_message::ListStorageMessage as ProtoListStorageMessage;
     pub use aconfigd::storage_request_message::Msg as ProtoStorageRequestMessageMsg;
+    pub use aconfigd::storage_request_message::NewStorageMessage as ProtoNewStorageMessage;
+    pub use aconfigd::storage_request_message::OTAFlagStagingMessage as ProtoOTAFlagStagingMessage;
+    pub use aconfigd::storage_request_message::RemoveLocalOverrideMessage as ProtoRemoveLocalOverrideMessage;
+    pub use aconfigd::storage_request_message::RemoveOverrideType as ProtoRemoveOverrideType;
     pub use aconfigd::storage_return_message::FlagQueryReturnMessage as ProtoFlagQueryReturnMessage;
     pub use aconfigd::storage_return_message::ListStorageReturnMessage as ProtoListStorageReturnMessage;
     pub use aconfigd::storage_return_message::Msg as ProtoStorageReturnMessageMsg;

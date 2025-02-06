@@ -35,11 +35,34 @@ pub(crate) fn copy_file(src: &Path, dst: &Path, mode: u32) -> Result<(), Aconfig
     if dst.exists() {
         set_file_permission(dst, 0o644)?;
     }
-    std::fs::copy(src, dst).map_err(|errmsg| AconfigdError::FailToCopyFile {
+
+    let mut src_file = File::open(src).map_err(|errmsg| AconfigdError::FailToCopyFile {
         src: src.display().to_string(),
         dst: dst.display().to_string(),
         errmsg,
     })?;
+
+    let mut dst_file = File::create(dst).map_err(|errmsg| AconfigdError::FailToCopyFile {
+        src: src.display().to_string(),
+        dst: dst.display().to_string(),
+        errmsg,
+    })?;
+
+    std::io::copy(&mut src_file, &mut dst_file).map_err(|errmsg| {
+        AconfigdError::FailToCopyFile {
+            src: src.display().to_string(),
+            dst: dst.display().to_string(),
+            errmsg,
+        }
+    })?;
+
+    // force kernel to flush file data in kernel buffer to filesystem
+    dst_file.sync_all().map_err(|errmsg| AconfigdError::FailToCopyFile {
+        src: src.display().to_string(),
+        dst: dst.display().to_string(),
+        errmsg,
+    })?;
+
     set_file_permission(dst, mode)
 }
 

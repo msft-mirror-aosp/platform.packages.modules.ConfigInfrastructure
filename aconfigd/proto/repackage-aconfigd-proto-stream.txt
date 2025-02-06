@@ -1,0 +1,2 @@
+rule android.aconfigd.Aconfigd android.internal.configinfra.aconfigd.x.Aconfigd
+rule android.aconfigd.Aconfigd$* android.internal.configinfra.aconfigd.x.Aconfigd$@1

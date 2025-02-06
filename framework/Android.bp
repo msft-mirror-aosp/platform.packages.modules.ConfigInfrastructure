@@ -45,9 +45,14 @@ java_sdk_library {
         "aconfig_storage_stub",
     ],
     static_libs: [
+        "aconfigd_java_proto_lib_repackaged",
+
+        // b/390667838: remove this dependency.
         "aconfigd_java_proto_lite_lib",
+
         "configinfra_framework_flags_java_lib",
         "modules-utils-build",
+        "modules-utils-proto",
         "aconfig_storage_file_java",
     ],
     aconfig_declarations: [
@@ -74,10 +79,29 @@ aconfig_declarations {
     srcs: [
         "flags.aconfig",
     ],
+    exportable: true,
 }
 
 java_aconfig_library {
     name: "configinfra_framework_flags_java_lib",
+    min_sdk_version: "34",
+    apex_available: [
+        "com.android.configinfrastructure",
+        "//apex_available:platform", // Used by DeviceConfigService
+    ],
+    visibility: [
+        "//visibility:public",
+    ],
+    aconfig_declarations: "configinfra_framework_flags",
+    sdk_version: "core_platform",
+    libs: [
+        "fake_device_config",
+    ],
+}
+
+java_aconfig_library {
+    name: "configinfra_framework_flags_java_exported_lib",
+    mode: "exported",
     min_sdk_version: "34",
     apex_available: [
         "com.android.configinfrastructure",

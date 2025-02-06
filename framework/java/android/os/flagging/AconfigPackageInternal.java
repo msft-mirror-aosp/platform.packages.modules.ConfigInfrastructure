@@ -16,13 +16,13 @@
 
 package android.os.flagging;
 
+import static android.aconfig.storage.TableUtils.StorageFilesBundle;
+
 import android.aconfig.storage.AconfigStorageException;
 import android.aconfig.storage.FlagValueList;
 import android.aconfig.storage.PackageTable;
-import android.aconfig.storage.StorageFileProvider;
 import android.annotation.NonNull;
 import android.compat.annotation.UnsupportedAppUsage;
-import android.os.StrictMode;
 
 /**
  * An {@code aconfig} package containing the enabled state of its flags.
@@ -56,7 +56,6 @@ public class AconfigPackageInternal {
      * <p>This method is intended for internal use only and may be changed or removed without
      * notice.
      *
-     * @param container The name of the container.
      * @param packageName The name of the Aconfig package.
      * @param packageFingerprint The expected fingerprint of the package.
      * @return An instance of {@link AconfigPackageInternal} representing the loaded package.
@@ -64,50 +63,20 @@ public class AconfigPackageInternal {
      */
     @UnsupportedAppUsage
     public static @NonNull AconfigPackageInternal load(
-            @NonNull String container, @NonNull String packageName, long packageFingerprint) {
-        return load(
-                container,
-                packageName,
-                packageFingerprint,
-                StorageFileProvider.getDefaultProvider());
-    }
-
-    /** @hide */
-    public static @NonNull AconfigPackageInternal load(
-            @NonNull String container,
-            @NonNull String packageName,
-            long packageFingerprint,
-            @NonNull StorageFileProvider fileProvider) {
-        StrictMode.ThreadPolicy oldPolicy = StrictMode.allowThreadDiskReads();
-        PackageTable.Node pNode = null;
-        FlagValueList vList = null;
-        try {
-            pNode = fileProvider.getPackageTable(container).get(packageName);
-            vList = fileProvider.getFlagValueList(container);
-        } finally {
-            StrictMode.setThreadPolicy(oldPolicy);
-        }
-
-        if (pNode == null || vList == null) {
+            @NonNull String packageName, long packageFingerprint) {
+        StorageFilesBundle files = AconfigPackage.sStorageFilesCache.get(packageName);
+        if (files == null) {
             throw new AconfigStorageException(
                     AconfigStorageException.ERROR_PACKAGE_NOT_FOUND,
-                    String.format(
-                            "package "
-                                    + packageName
-                                    + " in container "
-                                    + container
-                                    + " cannot be found on the device"));
+                    "package " + packageName + " cannot be found on the device");
         }
+        PackageTable.Node pNode = files.packageTable.get(packageName);
+        FlagValueList vList = files.flagValueList;
 
         if (pNode.hasPackageFingerprint() && packageFingerprint != pNode.getPackageFingerprint()) {
             throw new AconfigStorageException(
                     AconfigStorageException.ERROR_FILE_FINGERPRINT_MISMATCH,
-                    String.format(
-                            "package "
-                                    + packageName
-                                    + " in container "
-                                    + container
-                                    + " cannot be found on the device"));
+                    "package " + packageName + "fingerprint doesn't match the one on device");
         }
 
         return new AconfigPackageInternal(vList, pNode.getBooleanStartIndex());

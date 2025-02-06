@@ -29,7 +29,8 @@ use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 
-// Aconfigd that is capable of doing both one shot storage file init and socket service
+// Aconfigd that is capable of doing both one shot storage file init and socket
+// service
 #[derive(Debug)]
 pub struct Aconfigd {
     pub root_dir: PathBuf,
@@ -52,6 +53,7 @@ impl Aconfigd {
         let boot_dir = self.root_dir.join("boot");
         let pb = read_pb_from_file::<ProtoPersistStorageRecords>(&self.persist_storage_records)?;
         for entry in pb.records.iter() {
+            debug!("remove boot storage files for container {}", entry.container());
             let boot_value_file = boot_dir.join(entry.container().to_owned() + ".val");
             let boot_info_file = boot_dir.join(entry.container().to_owned() + ".info");
             if boot_value_file.exists() {
@@ -74,10 +76,13 @@ impl Aconfigd {
         Ok(())
     }
 
-    /// Initialize platform storage files, create or update existing persist storage files and
-    /// create new boot storage files for each platform partitions
+    /// Initialize platform storage files, create or update existing persist
+    /// storage files and create new boot storage files for each platform
+    /// partitions
     pub fn initialize_platform_storage(&mut self) -> Result<(), AconfigdError> {
         for container in ["system", "product", "vendor"] {
+            debug!("start initialize {} flags", container);
+
             let aconfig_dir = PathBuf::from("/".to_string() + container + "/etc/aconfig");
             let default_package_map = aconfig_dir.join("package.map");
             let default_flag_map = aconfig_dir.join("flag.map");
@@ -126,8 +131,9 @@ impl Aconfigd {
         Ok(())
     }
 
-    /// Initialize mainline storage files, create or update existing persist storage files and
-    /// create new boot storage files for each mainline container
+    /// Initialize mainline storage files, create or update existing persist
+    /// storage files and create new boot storage files for each mainline
+    /// container
     pub fn initialize_mainline_storage(&mut self) -> Result<(), AconfigdError> {
         // get all the apex dirs to visit
         let mut dirs_to_visit = Vec::new();
@@ -164,6 +170,7 @@ impl Aconfigd {
 
         // initialize each container
         for container in dirs_to_visit.iter() {
+            debug!("start initialize {} flags", container);
             let etc_dir = apex_dir.join(container).join("etc");
             let default_package_map = etc_dir.join("package.map");
             let default_flag_map = etc_dir.join("flag.map");
@@ -294,8 +301,11 @@ impl Aconfigd {
         if request_pb.remove_all() {
             self.storage_manager.remove_all_local_overrides()?;
         } else {
-            self.storage_manager
-                .remove_local_override(request_pb.package_name(), request_pb.flag_name())?;
+            self.storage_manager.remove_local_override(
+                request_pb.package_name(),
+                request_pb.flag_name(),
+                request_pb.remove_override_type(),
+            )?;
         }
         let mut return_pb = ProtoStorageReturnMessage::new();
         return_pb.mut_remove_local_override_message();
@@ -343,6 +353,7 @@ impl Aconfigd {
                 snapshot.set_is_readwrite(f.is_readwrite);
                 snapshot.set_has_server_override(f.has_server_override);
                 snapshot.set_has_local_override(f.has_local_override);
+                snapshot.set_has_boot_local_override(f.has_boot_local_override);
                 snapshot
             })
             .collect();

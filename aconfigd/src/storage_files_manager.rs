@@ -19,7 +19,7 @@ use crate::utils::{get_files_digest, read_pb_from_file, remove_file, write_pb_to
 use crate::AconfigdError;
 use aconfigd_protos::{
     ProtoFlagOverride, ProtoFlagOverrideType, ProtoLocalFlagOverrides, ProtoOTAFlagStagingMessage,
-    ProtoPersistStorageRecord, ProtoPersistStorageRecords,
+    ProtoPersistStorageRecord, ProtoPersistStorageRecords, ProtoRemoveOverrideType,
 };
 use log::debug;
 use std::collections::HashMap;
@@ -60,6 +60,7 @@ impl StorageFilesManager {
             );
             return Ok(());
         }
+
         self.all_storage_files
             .insert(String::from(pb.container()), StorageFiles::from_pb(pb, &self.root_dir)?);
 
@@ -108,6 +109,7 @@ impl StorageFilesManager {
         default_flag_val: &Path,
         default_flag_info: &Path,
     ) -> Result<(), AconfigdError> {
+        debug!("update {} storage files", container);
         let mut storage_files = self
             .get_storage_files(container)
             .ok_or(AconfigdError::FailToGetStorageFiles { container: container.to_string() })?;
@@ -128,6 +130,7 @@ impl StorageFilesManager {
         )?;
 
         // restage server overrides
+        debug!("restaging existing server overrides");
         for f in server_overrides.iter() {
             let context = storage_files.get_package_flag_context(&f.package_name, &f.flag_name)?;
             if context.flag_exists {
@@ -136,6 +139,7 @@ impl StorageFilesManager {
         }
 
         // restage local overrides
+        debug!("restaging existing local overrides");
         let mut new_pb = ProtoLocalFlagOverrides::new();
         for f in local_overrides.into_iter() {
             let context =
@@ -153,7 +157,8 @@ impl StorageFilesManager {
         Ok(())
     }
 
-    /// add or update a container's storage files in the case of container update
+    /// add or update a container's storage files in the case of container
+    /// update
     pub(crate) fn add_or_update_container_storage_files(
         &mut self,
         container: &str,
@@ -175,6 +180,8 @@ impl StorageFilesManager {
                         default_flag_val,
                         default_flag_info,
                     )?;
+                } else {
+                    debug!("no need to update {}, computed digest matches with record", container);
                 }
             }
             None => {
@@ -205,6 +212,7 @@ impl StorageFilesManager {
 
     /// Reset all storage files
     pub(crate) fn reset_all_storage(&mut self) -> Result<(), AconfigdError> {
+        debug!("reset storage files of all containers");
         let all_containers = self.all_storage_files.keys().cloned().collect::<Vec<String>>();
         for container in all_containers {
             let storage_files = self
@@ -278,6 +286,7 @@ impl StorageFilesManager {
     fn get_ota_flags(&mut self) -> Result<Option<Vec<ProtoFlagOverride>>, AconfigdError> {
         let ota_pb_file = self.root_dir.join("flags/ota.pb");
         if !ota_pb_file.exists() {
+            debug!("no OTA flags staged, skip");
             return Ok(None);
         }
 
@@ -285,13 +294,19 @@ impl StorageFilesManager {
         if let Some(target_build_id) = ota_flags_pb.build_id {
             let device_build_id = rustutils::system_properties::read("ro.build.fingerprint")
                 .map_err(|errmsg| AconfigdError::FailToReadBuildFingerPrint { errmsg })?;
-            if device_build_id == Some(target_build_id) {
+            if device_build_id == Some(target_build_id.clone()) {
                 remove_file(&ota_pb_file)?;
                 Ok(Some(ota_flags_pb.overrides))
             } else {
+                debug!(
+                    "fingerprint mismatch between OTA flag staging {}, and device {}",
+                    target_build_id,
+                    device_build_id.unwrap_or(String::from("None")),
+                );
                 Ok(None)
             }
         } else {
+            debug!("ill formatted OTA staged flags, build fingerprint not set");
             remove_file(&ota_pb_file)?;
             return Ok(None);
         }
@@ -300,6 +315,7 @@ impl StorageFilesManager {
     /// Apply staged ota flags
     pub(crate) fn apply_staged_ota_flags(&mut self) -> Result<(), AconfigdError> {
         if let Some(flags) = self.get_ota_flags()? {
+            debug!("apply staged OTA flags");
             for flag in flags.iter() {
                 if let Err(errmsg) = self.override_flag_value(
                     flag.package_name(),
@@ -324,6 +340,7 @@ impl StorageFilesManager {
         &self,
         file: &Path,
     ) -> Result<(), AconfigdError> {
+        debug!("writing updated storage records {}", file.display().to_string());
         let mut pb = ProtoPersistStorageRecords::new();
         pb.records = self
             .all_storage_files
@@ -349,6 +366,7 @@ impl StorageFilesManager {
         &mut self,
         package: &str,
         flag: &str,
+        remove_override_type: ProtoRemoveOverrideType,
     ) -> Result<(), AconfigdError> {
         let container = self
             .get_container(package)?
@@ -359,11 +377,13 @@ impl StorageFilesManager {
             .ok_or(AconfigdError::FailToGetStorageFiles { container: container.to_string() })?;
 
         let context = storage_files.get_package_flag_context(package, flag)?;
-        storage_files.remove_local_override(&context)
+        let immediate = remove_override_type == ProtoRemoveOverrideType::REMOVE_LOCAL_IMMEDIATE;
+        storage_files.remove_local_override(&context, immediate)
     }
 
     /// Remove all local overrides
     pub(crate) fn remove_all_local_overrides(&mut self) -> Result<(), AconfigdError> {
+        debug!("remove all local overrides for all containers");
         for storage_files in self.all_storage_files.values_mut() {
             storage_files.remove_all_local_overrides()?;
         }
@@ -418,6 +438,7 @@ impl StorageFilesManager {
 
     /// List all the flags
     pub(crate) fn list_all_flags(&mut self) -> Result<Vec<FlagSnapshot>, AconfigdError> {
+        debug!("list all flags across containers");
         let mut flags = Vec::new();
         for storage_files in self.all_storage_files.values_mut() {
             match storage_files.list_all_flags() {
@@ -728,6 +749,7 @@ mod tests {
             is_readwrite: true,
             has_server_override: true,
             has_local_override: false,
+            has_boot_local_override: false,
         };
 
         assert_eq!(flag, Some(expected_flag));
@@ -746,6 +768,7 @@ mod tests {
             is_readwrite: true,
             has_server_override: true,
             has_local_override: true,
+            has_boot_local_override: false,
         };
 
         assert_eq!(flag, Some(expected_flag));
@@ -807,6 +830,7 @@ mod tests {
             is_readwrite: true,
             has_server_override: true,
             has_local_override: false,
+            has_boot_local_override: false,
         };
 
         assert_eq!(flag, Some(expected_flag));
@@ -843,6 +867,7 @@ mod tests {
             is_readwrite: true,
             has_server_override: false,
             has_local_override: true,
+            has_boot_local_override: false,
         };
 
         assert_eq!(flag, Some(expected_flag));
@@ -879,6 +904,7 @@ mod tests {
             is_readwrite: true,
             has_server_override: false,
             has_local_override: true,
+            has_boot_local_override: false,
         };
 
         assert_eq!(flag, Some(expected_flag));
@@ -1017,7 +1043,13 @@ mod tests {
         add_example_overrides(&mut manager);
         manager.apply_all_staged_overrides("mockup").unwrap();
 
-        manager.remove_local_override("com.android.aconfig.storage.test_1", "disabled_rw").unwrap();
+        manager
+            .remove_local_override(
+                "com.android.aconfig.storage.test_1",
+                "disabled_rw",
+                ProtoRemoveOverrideType::REMOVE_LOCAL_ON_REBOOT,
+            )
+            .unwrap();
 
         let flag =
             manager.get_flag_snapshot("com.android.aconfig.storage.test_1", "disabled_rw").unwrap();
@@ -1033,6 +1065,7 @@ mod tests {
             is_readwrite: true,
             has_server_override: true,
             has_local_override: false,
+            has_boot_local_override: false,
         };
 
         assert_eq!(flag, Some(expected_flag));
@@ -1079,6 +1112,7 @@ mod tests {
             is_readwrite: true,
             has_server_override: false,
             has_local_override: false,
+            has_boot_local_override: false,
         };
 
         assert_eq!(flag, Some(expected_flag));
@@ -1097,6 +1131,7 @@ mod tests {
             is_readwrite: true,
             has_server_override: false,
             has_local_override: false,
+            has_boot_local_override: false,
         };
 
         assert_eq!(flag, Some(expected_flag));
@@ -1124,6 +1159,7 @@ mod tests {
             is_readwrite: true,
             has_server_override: true,
             has_local_override: true,
+            has_boot_local_override: false,
         };
         assert_eq!(flags[0], flag);
 
@@ -1138,6 +1174,7 @@ mod tests {
             is_readwrite: false,
             has_server_override: false,
             has_local_override: false,
+            has_boot_local_override: false,
         };
         assert_eq!(flags[1], flag);
 
@@ -1152,6 +1189,7 @@ mod tests {
             is_readwrite: true,
             has_server_override: true,
             has_local_override: false,
+            has_boot_local_override: false,
         };
         assert_eq!(flags[2], flag);
     }
@@ -1179,6 +1217,7 @@ mod tests {
             is_readwrite: true,
             has_server_override: true,
             has_local_override: false,
+            has_boot_local_override: false,
         };
         assert_eq!(flags[2], flag);
 
@@ -1193,6 +1232,7 @@ mod tests {
             is_readwrite: true,
             has_server_override: true,
             has_local_override: true,
+            has_boot_local_override: false,
         };
         assert_eq!(flags[0], flag);
     }
