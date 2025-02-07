@@ -42,6 +42,7 @@ final class WritableNamespaces {
                     "captive_portal_login",
                     "connectivity",
                     "exo",
+                    "location",
                     "nearby",
                     "netd_native",
                     "network_security",
