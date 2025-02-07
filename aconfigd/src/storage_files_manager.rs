@@ -496,6 +496,15 @@ mod tests {
             manager.all_storage_files.get("mockup").unwrap(),
             &StorageFiles::from_pb(&pb, &root_dir.tmp_dir.path()).unwrap(),
         );
+
+        // Ensure we can run this again, to exercise the case where the storage
+        // files already exist, for example if the storage proto is deleted.
+        manager.add_storage_files_from_pb(&pb);
+        assert_eq!(manager.all_storage_files.len(), 1);
+        assert_eq!(
+            manager.all_storage_files.get("mockup").unwrap(),
+            &StorageFiles::from_pb(&pb, &root_dir.tmp_dir.path()).unwrap(),
+        );
     }
 
     fn init_storage(container: &ContainerMock, manager: &mut StorageFilesManager) {
