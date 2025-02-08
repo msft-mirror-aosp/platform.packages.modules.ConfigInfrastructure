@@ -24,6 +24,7 @@ import android.internal.configinfra.aconfigd.x.Aconfigd.StorageReturnMessage;
 import android.internal.configinfra.aconfigd.x.Aconfigd.StorageReturnMessages;
 import android.net.LocalSocket;
 import android.net.LocalSocketAddress;
+import android.util.Slog;
 import android.util.configinfrastructure.proto.ProtoInputStream;
 import android.util.proto.ProtoOutputStream;
 
@@ -46,31 +47,14 @@ public final class AconfigdProtoStreamer {
     private static final String SYSTEM_SOCKET_ADDRESS = "aconfigd_system";
     private static final String MAINLINE_SOCKET_ADDRESS = "aconfigd_mainline";
 
-    private final LocalSocket mSocketSystem;
-    private final LocalSocket mSocketMainline;
+    private static final String TAG = "FlagManager";
 
     /**
-     * Create a new aconfigd socket connection.
+     * Create a new AconfigdProtoStreamer.
      *
      * @hide
      */
-    public AconfigdProtoStreamer() throws IOException {
-        mSocketSystem = new LocalSocket();
-        LocalSocketAddress systemAddress =
-                new LocalSocketAddress(
-                        SYSTEM_SOCKET_ADDRESS, LocalSocketAddress.Namespace.RESERVED);
-        if (!mSocketSystem.isConnected()) {
-            mSocketSystem.connect(systemAddress);
-        }
-
-        mSocketMainline = new LocalSocket();
-        LocalSocketAddress mainlineAddress =
-                new LocalSocketAddress(
-                        MAINLINE_SOCKET_ADDRESS, LocalSocketAddress.Namespace.RESERVED);
-        if (!mSocketMainline.isConnected()) {
-            mSocketMainline.connect(mainlineAddress);
-        }
-    }
+    public AconfigdProtoStreamer() {}
 
     /**
      * Send override removal requests to aconfigd.
@@ -100,8 +84,8 @@ public final class AconfigdProtoStreamer {
             requestOutputStream.end(msgsToken);
         }
 
-        InputStream inputStream = sendBytesOverSockets(requestOutputStream.getBytes());
-        parseAconfigdResponse(inputStream, StorageReturnMessage.REMOVE_LOCAL_OVERRIDE_MESSAGE);
+        sendBytesAndParseResponse(
+                requestOutputStream.getBytes(), StorageReturnMessage.REMOVE_LOCAL_OVERRIDE_MESSAGE);
     }
 
     /**
@@ -133,8 +117,8 @@ public final class AconfigdProtoStreamer {
         requestOutputStream.end(msgToken);
         requestOutputStream.end(msgsToken);
 
-        InputStream inputStream = sendBytesOverSockets(requestOutputStream.getBytes());
-        parseAconfigdResponse(inputStream, StorageReturnMessage.OTA_STAGING_MESSAGE);
+        sendBytesAndParseResponse(
+                requestOutputStream.getBytes(), StorageReturnMessage.OTA_STAGING_MESSAGE);
     }
 
     /**
@@ -160,16 +144,48 @@ public final class AconfigdProtoStreamer {
             requestOutputStream.end(msgsToken);
         }
 
-        InputStream inputStream = sendBytesOverSockets(requestOutputStream.getBytes());
-        parseAconfigdResponse(inputStream, StorageReturnMessage.FLAG_OVERRIDE_MESSAGE);
+        sendBytesAndParseResponse(
+                requestOutputStream.getBytes(), StorageReturnMessage.FLAG_OVERRIDE_MESSAGE);
     }
 
-    private InputStream sendBytesOverSockets(byte[] requestBytes) throws IOException {
+    private void sendBytesAndParseResponse(byte[] requestBytes, long responseMessageToken)
+            throws IOException {
         try {
-            return sendBytesOverSocket(requestBytes, mSocketSystem);
+            LocalSocket systemSocket = new LocalSocket();
+            LocalSocketAddress systemAddress =
+                    new LocalSocketAddress(
+                            SYSTEM_SOCKET_ADDRESS, LocalSocketAddress.Namespace.RESERVED);
+            if (!systemSocket.isConnected()) {
+                systemSocket.connect(systemAddress);
+            }
+
+            InputStream inputStream = sendBytesOverSocket(requestBytes, systemSocket);
+            parseAconfigdResponse(inputStream, responseMessageToken);
+
+            systemSocket.shutdownInput();
+            systemSocket.shutdownOutput();
+            systemSocket.close();
+
         } catch (IOException systemException) {
-            // If the system socket write failed, try the mainline socket.
-            return sendBytesOverSocket(requestBytes, mSocketMainline);
+            Slog.i(
+                    TAG,
+                    "failed to send request to system socket; trying mainline socket",
+                    systemException);
+
+            LocalSocket mainlineSocket = new LocalSocket();
+            LocalSocketAddress mainlineAddress =
+                    new LocalSocketAddress(
+                            MAINLINE_SOCKET_ADDRESS, LocalSocketAddress.Namespace.RESERVED);
+            if (!mainlineSocket.isConnected()) {
+                mainlineSocket.connect(mainlineAddress);
+            }
+
+            InputStream inputStream = sendBytesOverSocket(requestBytes, mainlineSocket);
+            parseAconfigdResponse(inputStream, responseMessageToken);
+
+            mainlineSocket.shutdownInput();
+            mainlineSocket.shutdownOutput();
+            mainlineSocket.close();
         }
     }
 
@@ -197,7 +213,7 @@ public final class AconfigdProtoStreamer {
             }
 
             if (currentToken != ((int) StorageReturnMessages.MSGS)) {
-                throw new IOException("invalid message type, expect storage return message");
+                continue;
             }
 
             long msgsToken = proto.start(StorageReturnMessages.MSGS);
