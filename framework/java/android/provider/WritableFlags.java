@@ -586,6 +586,7 @@ final class WritableFlags {
                 "settings_stats/integer_whitelist",
                 "settings_stats/string_whitelist",
                 "settings_stats/testflag",
+                "settings_ui/banner_message_pref_hide_resolved_content_delay_millis",
                 "statsd_java/include_certificate_hash",
                 "statsd_java/use_file_descriptor",
                 "statsd_native/app_upgrade_bucket_split",
