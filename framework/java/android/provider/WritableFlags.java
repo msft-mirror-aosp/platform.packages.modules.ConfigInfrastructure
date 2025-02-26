@@ -1267,7 +1267,6 @@ final class WritableFlags {
                 "permissions/permission_changes_store_exact_time",
                 "pmw/vendor.google.aam.flags.enable_aam",
                 "privacy/bg_location_check_is_enabled",
-                "privacy/camera_mic_icons_enabled",
                 "privacy/camera_toggle_enabled",
                 "privacy/data_sharing_update_period_millis",
                 "privacy/discrete_history_cutoff_millis",
