@@ -80,7 +80,7 @@ impl Aconfigd {
     /// storage files and create new boot storage files for each platform
     /// partitions
     pub fn initialize_platform_storage(&mut self) -> Result<(), AconfigdError> {
-        for container in ["system", "product", "vendor"] {
+        for container in ["system", "system_ext", "product", "vendor"] {
             debug!("start initialize {} flags", container);
 
             let aconfig_dir = PathBuf::from("/".to_string() + container + "/etc/aconfig");
@@ -124,7 +124,7 @@ impl Aconfigd {
 
         self.storage_manager.apply_staged_ota_flags()?;
 
-        for container in ["system", "product", "vendor"] {
+        for container in ["system", "system_ext", "product", "vendor"] {
             self.storage_manager.apply_all_staged_overrides(container)?;
         }
 
@@ -1061,7 +1061,7 @@ mod tests {
             .unwrap();
         assert_eq!(pb.records.len(), 3);
 
-        for container in ["system", "product", "vendor"] {
+        for container in ["system", "system_ext", "product", "vendor"] {
             let aconfig_dir = PathBuf::from("/".to_string() + container + "/etc/aconfig");
             let default_package_map = aconfig_dir.join("package.map");
             let default_flag_map = aconfig_dir.join("flag.map");
