@@ -66,6 +66,39 @@ impl Aconfigd {
         Ok(())
     }
 
+    /// Remove non platform boot storage file copies
+    pub fn remove_non_platform_boot_files(&mut self) -> Result<(), AconfigdError> {
+        let boot_dir = self.root_dir.join("boot");
+        for entry in std::fs::read_dir(&boot_dir)
+            .map_err(|errmsg| AconfigdError::FailToReadBootDir { errmsg })?
+        {
+            match entry {
+                Ok(entry) => {
+                    let path = entry.path();
+                    if !path.is_file() {
+                        continue;
+                    }
+                    if let Some(base_name) = path.file_name() {
+                        if let Some(file_name) = base_name.to_str() {
+                            if file_name.starts_with("system")
+                                || file_name.starts_with("system_ext")
+                                || file_name.starts_with("product")
+                                || file_name.starts_with("vendor")
+                            {
+                                continue;
+                            }
+                            remove_file(&path);
+                        }
+                    }
+                }
+                Err(errmsg) => {
+                    warn!("failed to visit entry: {}", errmsg);
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Initialize aconfigd from persist storage records
     pub fn initialize_from_storage_record(&mut self) -> Result<(), AconfigdError> {
         let boot_dir = self.root_dir.join("boot");
@@ -80,7 +113,7 @@ impl Aconfigd {
     /// storage files and create new boot storage files for each platform
     /// partitions
     pub fn initialize_platform_storage(&mut self) -> Result<(), AconfigdError> {
-        for container in ["system", "product", "vendor"] {
+        for container in ["system", "system_ext", "product", "vendor"] {
             debug!("start initialize {} flags", container);
 
             let aconfig_dir = PathBuf::from("/".to_string() + container + "/etc/aconfig");
@@ -124,7 +157,7 @@ impl Aconfigd {
 
         self.storage_manager.apply_staged_ota_flags()?;
 
-        for container in ["system", "product", "vendor"] {
+        for container in ["system", "system_ext", "product", "vendor"] {
             self.storage_manager.apply_all_staged_overrides(container)?;
         }
 
@@ -1061,7 +1094,7 @@ mod tests {
             .unwrap();
         assert_eq!(pb.records.len(), 3);
 
-        for container in ["system", "product", "vendor"] {
+        for container in ["system", "system_ext", "product", "vendor"] {
             let aconfig_dir = PathBuf::from("/".to_string() + container + "/etc/aconfig");
             let default_package_map = aconfig_dir.join("package.map");
             let default_flag_map = aconfig_dir.join("flag.map");
